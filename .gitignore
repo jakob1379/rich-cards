@@ -1,0 +1,19 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Local environment/tooling
+.direnv/
+.env.local
+
+# Generated outputs and editor backups
+card.svg
+*.svg
+*~
