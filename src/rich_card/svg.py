@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from html import escape
+import re
 from unicodedata import category
 
 from pygments import lex
@@ -23,7 +24,9 @@ from pygments.token import (
     Token,
 )
 from pygments.util import ClassNotFound
+from rich.ansi import AnsiDecoder
 from rich.cells import cell_len, split_graphemes
+from rich.console import Console
 
 BACKGROUND_PRESETS: dict[str, tuple[str, str, str]] = {
     "aurora": ("#f7fbff", "#bdefff", "#48c7df"),
@@ -61,6 +64,10 @@ EMOJI_FONT_STACK = (
     "'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', 'Twemoji Mozilla', "
     "'JetBrains Mono', 'Cascadia Code', 'SFMono-Regular', Menlo, Consolas, monospace"
 )
+ICON_FONT_STACK = (
+    "'Symbols Nerd Font Mono', 'Symbols Nerd Font', "
+    "'JetBrains Mono', 'Cascadia Code', 'SFMono-Regular', Menlo, Consolas, monospace"
+)
 CHAR_WIDTH = 9.4
 LINE_HEIGHT = 21
 FONT_SIZE = 15
@@ -68,6 +75,8 @@ INNER_PADDING_X = 34
 INNER_PADDING_Y = 30
 TITLE_BAR_HEIGHT = 50
 CAPTION_GAP = 20
+ANSI_ESCAPE_PATTERN = re.compile(r"\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07]*(?:\x07|\x1b\\)|[@-Z\\-_])")
+ANSI_CONSOLE = Console(color_system="truecolor", force_terminal=True)
 
 
 class MonokaiExtendedStyle(Style):
@@ -195,6 +204,12 @@ def _highlight_lines(code: str, options: CardOptions) -> list[list[Fragment]]:
     if not code:
         return [[Fragment("", DEFAULT_TEXT)]]
 
+    has_ansi = ANSI_ESCAPE_PATTERN.search(code)
+    if has_ansi and options.lexer is None and options.file_name is None:
+        return _ansi_lines(code.expandtabs(options.tab_size))
+    if has_ansi:
+        code = ANSI_ESCAPE_PATTERN.sub("", code)
+
     lexer = _load_lexer(code, options.lexer, options.file_name)
     style = _load_style(options.theme)
     lines: list[list[Fragment]] = [[]]
@@ -223,7 +238,25 @@ def _load_style(theme: str):
     try:
         return get_style_by_name(theme)
     except ClassNotFound as exc:
-        raise UnknownStyleError(f"Unknown Pygments style '{theme}'. Run `rich-cards --list-themes`.") from exc
+        raise UnknownStyleError(f"Unknown Pygments style '{theme}'. Run `rich-card --list-themes`.") from exc
+
+
+def _ansi_lines(code: str) -> list[list[Fragment]]:
+    lines: list[list[Fragment]] = []
+    for text in AnsiDecoder().decode(code):
+        line = [_segment_to_fragment(segment.text, segment.style) for segment in text.render(ANSI_CONSOLE)]
+        lines.append([fragment for fragment in line if fragment.text])
+    if lines and not lines[-1]:
+        lines.pop()
+    return lines or [[Fragment("", DEFAULT_TEXT)]]
+
+
+def _segment_to_fragment(text: str, style) -> Fragment:
+    color = DEFAULT_TEXT
+    if style and style.color:
+        triplet = style.color.get_truecolor()
+        color = f"#{triplet.red:02x}{triplet.green:02x}{triplet.blue:02x}"
+    return Fragment(text, color, bool(style and style.bold), bool(style and style.italic))
 
 
 def _token_style(token_type, style) -> Fragment:
@@ -371,17 +404,17 @@ def _line_markup(line: list[Fragment], x: int, y: int) -> tuple[list[str], list[
 def _fragment_tspans(fragment: Fragment) -> list[str]:
     spans: list[str] = []
     text = ""
-    emoji = False
+    mode = "normal"
     for start, end, _grapheme_width in split_graphemes(fragment.text)[0]:
         grapheme = fragment.text[start:end]
-        grapheme_is_emoji = _is_emoji_grapheme(grapheme)
-        if text and grapheme_is_emoji != emoji:
-            spans.append(_tspan(text, fragment, emoji))
+        grapheme_mode = _grapheme_mode(grapheme)
+        if text and grapheme_mode != mode:
+            spans.append(_tspan(text, fragment, mode))
             text = ""
         text += grapheme
-        emoji = grapheme_is_emoji
+        mode = grapheme_mode
     if text:
-        spans.append(_tspan(text, fragment, emoji))
+        spans.append(_tspan(text, fragment, mode))
     return spans
 
 
@@ -389,21 +422,61 @@ def _inline_tspans(text: str, color: str) -> str:
     return "".join(_fragment_tspans(Fragment(text, color)))
 
 
-def _tspan(text: str, fragment: Fragment, emoji: bool) -> str:
-    if emoji:
+def _tspan(text: str, fragment: Fragment, mode: str) -> str:
+    if mode == "emoji":
         attrs = [
             f'font-family="{EMOJI_FONT_STACK}"',
             'style="font-variant-emoji: emoji;"',
         ]
         if _has_color_overlay(text):
             attrs.append('fill-opacity="0"')
+    elif mode == "icon":
+        attrs = [
+            f'fill="{fragment.color}"',
+            f'font-family="{ICON_FONT_STACK}"',
+        ]
     else:
         attrs = [f'fill="{fragment.color}"']
-    if fragment.bold and not emoji:
+    if fragment.bold and mode != "emoji":
         attrs.append('font-weight="700"')
-    if fragment.italic and not emoji:
+    if fragment.italic and mode != "emoji":
         attrs.append('font-style="italic"')
-    return f'<tspan {" ".join(attrs)}>{escape(text)}</tspan>'
+    return f'<tspan {" ".join(attrs)}>{_escape_xml_text(text)}</tspan>'
+
+
+def _escape_xml_text(text: str) -> str:
+    valid_text = "".join(character for character in text if _is_valid_xml_character(character))
+    return escape(valid_text)
+
+
+def _is_valid_xml_character(character: str) -> bool:
+    codepoint = ord(character)
+    return (
+        codepoint in (0x09, 0x0A, 0x0D)
+        or 0x20 <= codepoint <= 0xD7FF
+        or 0xE000 <= codepoint <= 0xFFFD
+        or 0x10000 <= codepoint <= 0x10FFFF
+    )
+
+
+def _grapheme_mode(text: str) -> str:
+    if _is_emoji_grapheme(text):
+        return "emoji"
+    if _is_icon_grapheme(text):
+        return "icon"
+    return "normal"
+
+
+def _is_icon_grapheme(text: str) -> bool:
+    for character in text:
+        codepoint = ord(character)
+        if 0xE000 <= codepoint <= 0xF8FF:
+            return True
+        if 0xF0000 <= codepoint <= 0xFFFFD:
+            return True
+        if 0x100000 <= codepoint <= 0x10FFFD:
+            return True
+    return False
 
 
 def _is_emoji_grapheme(text: str) -> bool:

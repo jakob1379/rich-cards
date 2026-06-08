@@ -6,8 +6,8 @@ from pathlib import Path
 
 from typer.testing import CliRunner
 
-from rich_cards.cli import BackgroundPreset, app
-from rich_cards.svg import BACKGROUND_PRESETS, Fragment, _wrap_fragments
+from rich_card.cli import BackgroundPreset, app
+from rich_card.svg import BACKGROUND_PRESETS, Fragment, _wrap_fragments
 
 
 class RichCardsCliTest(unittest.TestCase):
@@ -224,6 +224,52 @@ class RichCardsCliTest(unittest.TestCase):
 
         self.assertEqual(result.exit_code, 0, result.output)
         self.assertIn("value", self.output.read_text(encoding="utf-8"))
+
+    def test_stdin_preserves_ansi_color_when_no_lexer_is_set(self) -> None:
+        result = self.runner.invoke(
+            app,
+            ["--output", str(self.output)],
+            input="\x1b[31mred\x1b[0m plain\n\x1b[1;38;2;1;2;3mtruecolor\x1b[0m\n",
+        )
+
+        self.assertEqual(result.exit_code, 0, result.output)
+        svg = self.output.read_text(encoding="utf-8")
+        self.assertIn('<tspan fill="#800000">red</tspan>', svg)
+        self.assertIn('<tspan fill="#f0f2f5"> plain</tspan>', svg)
+        self.assertIn('<tspan fill="#010203" font-weight="700">truecolor</tspan>', svg)
+        self.assertNotIn("\x1b", svg)
+
+    def test_stdin_renders_eza_icons_with_nerd_font_stack(self) -> None:
+        result = self.runner.invoke(
+            app,
+            ["--output", str(self.output)],
+            input="\x1b[34m󰣞 \x1b[1msrc\x1b[0m\n\x1b[33m \x1b[1mcli.py\x1b[0m\n",
+        )
+
+        self.assertEqual(result.exit_code, 0, result.output)
+        svg = self.output.read_text(encoding="utf-8")
+        self.assertIn(
+            '<tspan fill="#000080" font-family="\'Symbols Nerd Font Mono\', \'Symbols Nerd Font\'',
+            svg,
+        )
+        self.assertIn(">󰣞</tspan>", svg)
+        self.assertIn("></tspan>", svg)
+        self.assertIn("src", svg)
+        self.assertIn("cli.py", svg)
+        self.assertNotIn("\x1b", svg)
+
+    def test_explicit_lexer_strips_ansi_sequences_from_stdin(self) -> None:
+        result = self.runner.invoke(
+            app,
+            ["--lexer", "text", "--output", str(self.output)],
+            input="\x1b[31mred\x1b[0m plain\n",
+        )
+
+        self.assertEqual(result.exit_code, 0, result.output)
+        svg = self.output.read_text(encoding="utf-8")
+        self.assertIn("red plain", svg)
+        self.assertNotIn("\x1b", svg)
+        self.assertNotIn("[31m", svg)
 
     def test_content_takes_precedence_over_source(self) -> None:
         source = Path(self.tmp.name) / "sample.py"

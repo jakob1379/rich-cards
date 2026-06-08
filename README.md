@@ -1,5 +1,5 @@
-rich-cards
-==========
+rich-card
+=========
 
 Render syntax-highlighted code as a polished terminal card on a gradient SVG
 background. The CLI uses Typer for commands and an in-process Pygments style
@@ -7,13 +7,20 @@ based on bat's Monokai Extended colors.
 
 ```bash
 printf 'def hello():\n    return "world"\n' \
-  | rich-cards --lexer python --theme monokai-extended --title hello.py -o card.svg
+  | rich-card --lexer python --theme monokai-extended --title hello.py -o card.svg
+```
+
+Piped terminal output is read from stdin, ANSI colors are preserved, and eza
+icons render when a Nerd Font such as Symbols Nerd Font Mono is installed:
+
+```bash
+eza --tree --icons=always --git-ignore --colour=always src/ | rich-card --title tree -o tree.svg
 ```
 
 Inline content works well for one-off cards:
 
 ```bash
-rich-cards \
+rich-card \
   --content $'TAX_RATES = {"CA": 0.0825, "NY": 0.05}\n\nprint(TAX_RATES)' \
   --lexer python \
   --theme monokai-extended \
@@ -26,9 +33,9 @@ rich-cards \
 Useful commands:
 
 ```bash
-rich-cards --list-themes
-rich-cards src/example.py --theme monokai-extended -o example.svg
-nix develop -c uv run rich-cards --content 'print("hi")' -o card.svg
+rich-card --list-themes
+rich-card src/example.py --theme monokai-extended -o example.svg
+nix develop -c uv run rich-card --content 'print("hi")' -o card.svg
 ```
 
 Background presets include `aurora`, `blue-raspberry`, `cosmic-lumen`,

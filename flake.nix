@@ -1,5 +1,5 @@
 {
-  description = "Development shell for rich-cards";
+  description = "Development shell for rich-card";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";

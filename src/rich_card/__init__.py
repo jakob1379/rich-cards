@@ -1,6 +1,6 @@
 """Render Rich-powered terminal code cards."""
 
-from rich_cards.cli import app
+from rich_card.cli import app
 
 __all__ = ["app"]
 

@@ -10,7 +10,7 @@ from pygments.lexers import get_lexer_by_name
 from pygments.styles import get_all_styles, get_style_by_name
 from pygments.util import ClassNotFound
 
-from rich_cards.svg import (
+from rich_card.svg import (
     BACKGROUND_PRESETS,
     CardOptions,
     UnknownStyleError,
@@ -49,7 +49,7 @@ def _theme_callback(value: str) -> str:
     try:
         get_style_by_name(value)
     except ClassNotFound as exc:
-        raise typer.BadParameter(f"Unknown Pygments style '{value}'. Run `rich-cards --list-themes`.") from exc
+        raise typer.BadParameter(f"Unknown Pygments style '{value}'. Run `rich-card --list-themes`.") from exc
     return value
 
 
@@ -96,7 +96,7 @@ def render(
             "--lexer",
             "-l",
             callback=_lexer_callback,
-            help="Pygments lexer name. Defaults to source filename inference, or plain text for stdin.",
+            help="Pygments lexer name. Defaults to source filename inference, or ANSI-aware plain text for stdin.",
         ),
     ] = None,
     theme: Annotated[
@@ -105,7 +105,7 @@ def render(
             "--theme",
             "-s",
             callback=_theme_callback,
-            help="Pygments theme name. See `rich-cards --list-themes`.",
+            help="Pygments theme name. See `rich-card --list-themes`.",
         ),
     ] = "monokai-extended",
     title: Annotated[
@@ -131,7 +131,7 @@ def render(
     radius: Annotated[
         int,
         typer.Option("--radius", "-r", min=4, max=80, help="Rounded card corner radius in pixels."),
-    ] = 30,
+    ] = 12,
     line_numbers: Annotated[
         bool,
         typer.Option("--line-numbers/--no-line-numbers", "-n", help="Show line numbers."),

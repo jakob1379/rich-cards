@@ -1,5 +1,5 @@
 [project]
-name = "rich-cards"
+name = "rich-card"
 version = "0.1.0"
 description = "Render syntax-highlighted code cards on polished gradient SVG backgrounds."
 readme = "README.md"
@@ -13,7 +13,8 @@ dependencies = [
 ]
 
 [project.scripts]
-rich-cards = "rich_cards.cli:app"
+rich-card = "rich_card.cli:app"
+rich-cards = "rich_card.cli:app"
 
 [build-system]
 requires = ["uv_build>=0.11.17,<0.12.0"]
