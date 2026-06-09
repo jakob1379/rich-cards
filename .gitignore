@@ -8,12 +8,14 @@ wheels/
 
 # Virtual environments
 .venv
+.uv-cache/
 
 # Local environment/tooling
 .direnv/
 .env.local
+.pre-commit-config.yaml
 
 # Generated outputs and editor backups
-card.svg
 *.svg
+!card.svg
 *~

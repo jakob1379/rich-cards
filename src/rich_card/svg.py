@@ -7,8 +7,8 @@ from math import ceil
 import re
 import struct
 from unicodedata import category
-from xml.etree import ElementTree
 
+from defusedxml import ElementTree
 from pygments import lex
 from pygments.lexers import get_lexer_by_name, guess_lexer_for_filename
 from pygments.style import Style
@@ -77,10 +77,7 @@ EMOJI_FONT_STACK = (
     "'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', 'Twemoji Mozilla', "
     f"{EMOJI_TEXT_FALLBACK_STACK}"
 )
-ICON_FONT_STACK = (
-    "'Symbols Nerd Font Mono', 'Symbols Nerd Font', "
-    f"{CODE_FONT_STACK}"
-)
+ICON_FONT_STACK = f"'Symbols Nerd Font Mono', 'Symbols Nerd Font', {CODE_FONT_STACK}"
 CHAR_WIDTH = 9.4
 LINE_HEIGHT = 21
 FONT_SIZE = 15
@@ -89,8 +86,27 @@ INNER_PADDING_Y = 30
 TITLE_BAR_HEIGHT = 50
 TITLE_BAR_TEXT_PADDING_X = 96
 MIN_CARD_WIDTH = 160
-ANSI_ESCAPE_PATTERN = re.compile(r"\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07]*(?:\x07|\x1b\\)|[@-Z\\-_])")
+ANSI_ESCAPE_PATTERN = re.compile(
+    r"\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07]*(?:\x07|\x1b\\)|[@-Z\\-_])"
+)
 ANSI_CONSOLE = Console(color_system="truecolor", force_terminal=True)
+JPEG_STANDALONE_MARKERS = {0x01, *range(0xD0, 0xD8)}
+JPEG_TERMINAL_MARKERS = {0xD9, 0xDA}
+JPEG_START_OF_FRAME_MARKERS = {
+    0xC0,
+    0xC1,
+    0xC2,
+    0xC3,
+    0xC5,
+    0xC6,
+    0xC7,
+    0xC9,
+    0xCA,
+    0xCB,
+    0xCD,
+    0xCE,
+    0xCF,
+}
 
 
 class MonokaiExtendedStyle(Style):
@@ -188,7 +204,9 @@ def render_code_card_svg(code: str, options: CardOptions) -> str:
     gradients = BACKGROUND_PRESETS.get(options.background)
     if gradients is None:
         known = ", ".join(sorted(BACKGROUND_PRESETS))
-        raise UnknownStyleError(f"Unknown background preset '{options.background}'. Use one of: {known}.")
+        raise UnknownStyleError(
+            f"Unknown background preset '{options.background}'. Use one of: {known}."
+        )
 
     raw_lines = _highlight_lines(code, options)
     if options.width is None:
@@ -204,11 +222,18 @@ def render_code_card_svg(code: str, options: CardOptions) -> str:
         card_width = width - (options.padding * 2)
         code_width = max(1, card_width - (options.inner_padding_x * 2))
         max_columns = max(20, int(code_width / CHAR_WIDTH))
-        lines = _prepare_lines(raw_lines, max_columns, options.line_numbers, options.word_wrap)
+        lines = _prepare_lines(
+            raw_lines, max_columns, options.line_numbers, options.word_wrap
+        )
 
     card_width = width - (options.padding * 2)
     code_height = max(1, len(lines)) * LINE_HEIGHT
-    card_height = TITLE_BAR_HEIGHT + options.inner_padding_y + code_height + options.inner_padding_y
+    card_height = (
+        TITLE_BAR_HEIGHT
+        + options.inner_padding_y
+        + code_height
+        + options.inner_padding_y
+    )
     height = card_height + (options.padding * 2)
     card_x = options.padding
     card_y = options.padding
@@ -218,7 +243,7 @@ def render_code_card_svg(code: str, options: CardOptions) -> str:
     parts = [
         _svg_open(width, height),
         _defs(*gradients),
-        f'<rect width="100%" height="100%" fill="url(#card-bg)"/>',
+        '<rect width="100%" height="100%" fill="url(#card-bg)"/>',
         f'<rect x="{card_x}" y="{card_y}" width="{card_width}" height="{card_height}" '
         f'rx="{options.radius}" fill="{CARD_FILL}" stroke="{CARD_STROKE}" stroke-width="3" '
         f'filter="url(#soft-shadow)"/>',
@@ -233,7 +258,9 @@ def render_image_card_svg(image: bytes, file_name: str, options: CardOptions) ->
     gradients = BACKGROUND_PRESETS.get(options.background)
     if gradients is None:
         known = ", ".join(sorted(BACKGROUND_PRESETS))
-        raise UnknownStyleError(f"Unknown background preset '{options.background}'. Use one of: {known}.")
+        raise UnknownStyleError(
+            f"Unknown background preset '{options.background}'. Use one of: {known}."
+        )
 
     content = _load_image_content(image, file_name)
     if options.width is None:
@@ -246,7 +273,12 @@ def render_image_card_svg(image: bytes, file_name: str, options: CardOptions) ->
     scale = min(1.0, image_area_width / content.width)
     image_width = content.width * scale
     image_height = content.height * scale
-    card_height = TITLE_BAR_HEIGHT + options.inner_padding_y + image_height + options.inner_padding_y
+    card_height = (
+        TITLE_BAR_HEIGHT
+        + options.inner_padding_y
+        + image_height
+        + options.inner_padding_y
+    )
     height = card_height + (options.padding * 2)
     card_x = options.padding
     card_y = options.padding
@@ -256,7 +288,7 @@ def render_image_card_svg(image: bytes, file_name: str, options: CardOptions) ->
     parts = [
         _svg_open(width, height),
         _defs(*gradients),
-        f'<rect width="100%" height="100%" fill="url(#card-bg)"/>',
+        '<rect width="100%" height="100%" fill="url(#card-bg)"/>',
         f'<rect x="{card_x}" y="{card_y}" width="{card_width}" height="{card_height:.1f}" '
         f'rx="{options.radius}" fill="{CARD_FILL}" stroke="{CARD_STROKE}" stroke-width="3" '
         f'filter="url(#soft-shadow)"/>',
@@ -269,7 +301,9 @@ def render_image_card_svg(image: bytes, file_name: str, options: CardOptions) ->
 
 
 def _auto_code_canvas_width(lines: list[list[Fragment]], options: CardOptions) -> int:
-    content_width = ceil(max((_line_cell_width(line) for line in lines), default=0) * CHAR_WIDTH)
+    content_width = ceil(
+        max((_line_cell_width(line) for line in lines), default=0) * CHAR_WIDTH
+    )
     return _auto_canvas_width(content_width, options)
 
 
@@ -334,44 +368,47 @@ def _jpeg_dimensions(image: bytes) -> tuple[float, float]:
 
     index = 2
     while index < len(image):
-        while index < len(image) and image[index] == 0xFF:
-            index += 1
-        if index >= len(image):
+        marker, index = _next_jpeg_marker(image, index)
+        if marker is None or marker in JPEG_TERMINAL_MARKERS:
             break
-        marker = image[index]
-        index += 1
-        if marker in {0x01, *range(0xD0, 0xD8)}:
+        if marker in JPEG_STANDALONE_MARKERS:
             continue
-        if marker in {0xD9, 0xDA}:
+
+        segment_length = _jpeg_segment_length(image, index)
+        if segment_length is None:
             break
-        if index + 2 > len(image):
-            break
-        segment_length = struct.unpack(">H", image[index : index + 2])[0]
-        if segment_length < 2 or index + segment_length > len(image):
-            break
-        if marker in {
-            0xC0,
-            0xC1,
-            0xC2,
-            0xC3,
-            0xC5,
-            0xC6,
-            0xC7,
-            0xC9,
-            0xCA,
-            0xCB,
-            0xCD,
-            0xCE,
-            0xCF,
-        }:
-            if segment_length < 7:
-                break
-            height, width = struct.unpack(">HH", image[index + 3 : index + 7])
-            if width <= 0 or height <= 0:
-                raise UnsupportedImageError("JPEG image dimensions must be positive.")
-            return float(width), float(height)
+        if marker in JPEG_START_OF_FRAME_MARKERS:
+            return _jpeg_segment_dimensions(image, index, segment_length)
         index += segment_length
     raise UnsupportedImageError("Could not determine JPEG image dimensions.")
+
+
+def _next_jpeg_marker(image: bytes, index: int) -> tuple[int | None, int]:
+    while index < len(image) and image[index] == 0xFF:
+        index += 1
+    if index >= len(image):
+        return None, index
+    return image[index], index + 1
+
+
+def _jpeg_segment_length(image: bytes, index: int) -> int | None:
+    if index + 2 > len(image):
+        return None
+    segment_length = struct.unpack(">H", image[index : index + 2])[0]
+    if segment_length < 2 or index + segment_length > len(image):
+        return None
+    return segment_length
+
+
+def _jpeg_segment_dimensions(
+    image: bytes, index: int, segment_length: int
+) -> tuple[float, float]:
+    if segment_length < 7:
+        raise UnsupportedImageError("Could not determine JPEG image dimensions.")
+    height, width = struct.unpack(">HH", image[index + 3 : index + 7])
+    if width <= 0 or height <= 0:
+        raise UnsupportedImageError("JPEG image dimensions must be positive.")
+    return float(width), float(height)
 
 
 def _svg_dimensions(image: bytes) -> tuple[float, float]:
@@ -388,13 +425,19 @@ def _svg_dimensions(image: bytes) -> tuple[float, float]:
     view_box = root.get("viewBox")
     if view_box:
         try:
-            values = [float(value) for value in re.split(r"[\s,]+", view_box.strip()) if value]
+            values = [
+                float(value) for value in re.split(r"[\s,]+", view_box.strip()) if value
+            ]
         except ValueError as exc:
-            raise UnsupportedImageError("Could not determine SVG image dimensions. Add width/height or viewBox.") from exc
+            raise UnsupportedImageError(
+                "Could not determine SVG image dimensions. Add width/height or viewBox."
+            ) from exc
         if len(values) == 4 and values[2] > 0 and values[3] > 0:
             return values[2], values[3]
 
-    raise UnsupportedImageError("Could not determine SVG image dimensions. Add width/height or viewBox.")
+    raise UnsupportedImageError(
+        "Could not determine SVG image dimensions. Add width/height or viewBox."
+    )
 
 
 def _svg_length(value: str) -> float | None:
@@ -434,7 +477,9 @@ def _load_lexer(code: str, lexer_name: str | None, file_name: str | None):
             return guess_lexer_for_filename(file_name, code)
         return get_lexer_by_name("text")
     except ClassNotFound as exc:
-        raise UnknownStyleError(f"Unknown Pygments lexer '{lexer_name or file_name}'.") from exc
+        raise UnknownStyleError(
+            f"Unknown Pygments lexer '{lexer_name or file_name}'."
+        ) from exc
 
 
 def _load_style(theme: str):
@@ -443,13 +488,18 @@ def _load_style(theme: str):
     try:
         return get_style_by_name(theme)
     except ClassNotFound as exc:
-        raise UnknownStyleError(f"Unknown Pygments style '{theme}'. Run `rich-card --list-themes`.") from exc
+        raise UnknownStyleError(
+            f"Unknown Pygments style '{theme}'. Run `rich-card --list-themes`."
+        ) from exc
 
 
 def _ansi_lines(code: str) -> list[list[Fragment]]:
     lines: list[list[Fragment]] = []
     for text in AnsiDecoder().decode(code):
-        line = [_segment_to_fragment(segment.text, segment.style) for segment in text.render(ANSI_CONSOLE)]
+        line = [
+            _segment_to_fragment(segment.text, segment.style)
+            for segment in text.render(ANSI_CONSOLE)
+        ]
         lines.append([fragment for fragment in line if fragment.text])
     if lines and not lines[-1]:
         lines.pop()
@@ -461,7 +511,9 @@ def _segment_to_fragment(text: str, style) -> Fragment:
     if style and style.color:
         triplet = style.color.get_truecolor()
         color = f"#{triplet.red:02x}{triplet.green:02x}{triplet.blue:02x}"
-    return Fragment(text, color, bool(style and style.bold), bool(style and style.italic))
+    return Fragment(
+        text, color, bool(style and style.bold), bool(style and style.italic)
+    )
 
 
 def _token_style(token_type, style) -> Fragment:
@@ -491,10 +543,16 @@ def _prepare_lines(
     output: list[list[Fragment]] = []
 
     for index, fragments in enumerate(raw_lines, start=1):
-        wrapped = _wrap_fragments(fragments, content_columns) if word_wrap else [fragments]
+        wrapped = (
+            _wrap_fragments(fragments, content_columns) if word_wrap else [fragments]
+        )
         for wrap_index, line in enumerate(wrapped):
             if line_numbers:
-                label = str(index).rjust(numbered_width) if wrap_index == 0 else " " * numbered_width
+                label = (
+                    str(index).rjust(numbered_width)
+                    if wrap_index == 0
+                    else " " * numbered_width
+                )
                 output.append([Fragment(f"{label} │ ", MUTED_TEXT), *line])
             else:
                 output.append(line)
@@ -528,13 +586,21 @@ def _append_fragment(line: list[Fragment], template: Fragment, text: str) -> Non
         return
     if line and _same_style(line[-1], template):
         previous = line[-1]
-        line[-1] = Fragment(previous.text + text, previous.color, previous.bold, previous.italic)
+        line[-1] = Fragment(
+            previous.text + text, previous.color, previous.bold, previous.italic
+        )
         return
-    line.append(Fragment(text, template.color, bold=template.bold, italic=template.italic))
+    line.append(
+        Fragment(text, template.color, bold=template.bold, italic=template.italic)
+    )
 
 
 def _same_style(left: Fragment, right: Fragment) -> bool:
-    return left.color == right.color and left.bold == right.bold and left.italic == right.italic
+    return (
+        left.color == right.color
+        and left.bold == right.bold
+        and left.italic == right.italic
+    )
 
 
 def _svg_open(width: int, height: int) -> str:
@@ -568,7 +634,7 @@ def _title_bar(x: int, y: int, width: int, title: str | None) -> str:
         label = (
             f'<text x="{x + width / 2:.1f}" y="{y + 31}" '
             f'font-family="{CHROME_FONT_STACK}" font-size="13" text-anchor="middle">'
-            f'{_inline_tspans(title, MUTED_TEXT)}'
+            f"{_inline_tspans(title, MUTED_TEXT)}"
             "</text>"
         )
     rule = f'<line x1="{x}" y1="{y + TITLE_BAR_HEIGHT}" x2="{x + width}" y2="{y + TITLE_BAR_HEIGHT}" stroke="#34373c"/>'
@@ -583,7 +649,7 @@ def _code_lines(lines: list[list[Fragment]], x: int, y: int) -> str:
         output.append(
             f'<text x="{x}" y="{line_y}" font-family="{CODE_FONT_STACK}" '
             f'font-size="{FONT_SIZE}" xml:space="preserve">'
-            f'{"".join(spans)}'
+            f"{''.join(spans)}"
             "</text>"
         )
         output.extend(overlays)
@@ -600,7 +666,9 @@ def _line_markup(line: list[Fragment], x: int, y: int) -> tuple[list[str], list[
         spans.extend(_fragment_tspans(fragment))
         for start, end, grapheme_width in split_graphemes(fragment.text)[0]:
             grapheme = fragment.text[start:end]
-            overlay = _emoji_overlay(grapheme, x + (cell_offset * CHAR_WIDTH), y, grapheme_width)
+            overlay = _emoji_overlay(
+                grapheme, x + (cell_offset * CHAR_WIDTH), y, grapheme_width
+            )
             if overlay:
                 overlays.append(overlay)
             cell_offset += grapheme_width
@@ -663,11 +731,13 @@ def _tspan(text: str, fragment: Fragment, mode: str) -> str:
         attrs.append('font-weight="700"')
     if fragment.italic and mode != "emoji":
         attrs.append('font-style="italic"')
-    return f'<tspan {" ".join(attrs)}>{_escape_xml_text(text)}</tspan>'
+    return f"<tspan {' '.join(attrs)}>{_escape_xml_text(text)}</tspan>"
 
 
 def _escape_xml_text(text: str) -> str:
-    valid_text = "".join(character for character in text if _is_valid_xml_character(character))
+    valid_text = "".join(
+        character for character in text if _is_valid_xml_character(character)
+    )
     return escape(valid_text)
 
 
@@ -714,7 +784,9 @@ def _is_emoji_grapheme(text: str) -> bool:
 
 
 def _has_color_overlay(text: str) -> bool:
-    return all(_emoji_svg(text[start:end]) for start, end, _width in split_graphemes(text)[0])
+    return all(
+        _emoji_svg(text[start:end]) for start, end, _width in split_graphemes(text)[0]
+    )
 
 
 def _emoji_overlay(text: str, x: float, baseline_y: int, cells: int) -> str:
@@ -735,7 +807,7 @@ def _emoji_svg(text: str) -> str:
     if normalized in {"❤", "♥"}:
         return (
             '<path fill="#ff3b57" d="M23.6 4.8c-2.8 0-5.2 1.5-6.6 '
-            '3.7-1.4-2.2-3.8-3.7-6.6-3.7C6.2 4.8 3 8 3 12.1c0 '
+            "3.7-1.4-2.2-3.8-3.7-6.6-3.7C6.2 4.8 3 8 3 12.1c0 "
             '7.1 14 15.1 14 15.1s14-8 14-15.1c0-4.1-3.2-7.3-7.4-7.3z"/>'
         )
     if normalized == "✅":

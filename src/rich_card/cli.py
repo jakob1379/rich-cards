@@ -67,7 +67,9 @@ def _theme_callback(value: str) -> str:
     try:
         get_style_by_name(value)
     except ClassNotFound as exc:
-        raise typer.BadParameter(f"Unknown Pygments style '{value}'. Run `rich-card --list-themes`.") from exc
+        raise typer.BadParameter(
+            f"Unknown Pygments style '{value}'. Run `rich-card --list-themes`."
+        ) from exc
     return value
 
 
@@ -95,7 +97,9 @@ def render(
     ] = None,
     content: Annotated[
         str | None,
-        typer.Option("--content", "-c", help="Inline code content. Takes precedence over SOURCE."),
+        typer.Option(
+            "--content", "-c", help="Inline code content. Takes precedence over SOURCE."
+        ),
     ] = None,
     image: Annotated[
         Path | None,
@@ -137,7 +141,9 @@ def render(
     ] = "monokai-extended",
     title: Annotated[
         str | None,
-        typer.Option("--title", "-t", help="Optional card title shown in the card chrome."),
+        typer.Option(
+            "--title", "-t", help="Optional card title shown in the card chrome."
+        ),
     ] = None,
     background: Annotated[
         BackgroundPreset,
@@ -145,7 +151,9 @@ def render(
     ] = BackgroundPreset.aurora,
     width: Annotated[
         int | None,
-        typer.Option("--width", "-w", min=520, max=2400, help="Fixed SVG canvas width in pixels."),
+        typer.Option(
+            "--width", "-w", min=520, max=2400, help="Fixed SVG canvas width in pixels."
+        ),
     ] = None,
     padding: Annotated[
         int,
@@ -170,15 +178,25 @@ def render(
     ] = None,
     radius: Annotated[
         int,
-        typer.Option("--radius", "-r", min=4, max=80, help="Rounded card corner radius in pixels."),
+        typer.Option(
+            "--radius",
+            "-r",
+            min=4,
+            max=80,
+            help="Rounded card corner radius in pixels.",
+        ),
     ] = 12,
     line_numbers: Annotated[
         bool,
-        typer.Option("--line-numbers/--no-line-numbers", "-n", help="Show line numbers."),
+        typer.Option(
+            "--line-numbers/--no-line-numbers", "-n", help="Show line numbers."
+        ),
     ] = False,
     word_wrap: Annotated[
         bool,
-        typer.Option("--word-wrap/--no-word-wrap", "-W", help="Wrap long lines inside the card."),
+        typer.Option(
+            "--word-wrap/--no-word-wrap", "-W", help="Wrap long lines inside the card."
+        ),
     ] = False,
     tab_size: Annotated[
         int,
@@ -240,5 +258,5 @@ def render(
         raise typer.BadParameter(str(exc)) from exc
 
     output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(svg, encoding="utf-8")
+    output.write_text(f"{svg}\n", encoding="utf-8")
     typer.echo(str(output))

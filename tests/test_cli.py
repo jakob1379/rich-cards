@@ -8,7 +8,13 @@ from pathlib import Path
 from typer.testing import CliRunner
 
 from rich_card.cli import BackgroundPreset, app
-from rich_card.svg import BACKGROUND_PRESETS, CHROME_FONT_STACK, EMOJI_FONT_STACK, Fragment, _wrap_fragments
+from rich_card.svg import (
+    BACKGROUND_PRESETS,
+    CHROME_FONT_STACK,
+    EMOJI_FONT_STACK,
+    Fragment,
+    _wrap_fragments,
+)
 
 PNG_IMAGE = (
     b"\x89PNG\r\n\x1a\n"
@@ -38,7 +44,9 @@ class RichCardsCliTest(unittest.TestCase):
         self.output = Path(self.tmp.name) / "card.svg"
 
     def svg_width(self, path: Path) -> int:
-        match = re.search(r'<svg[^>]* width="([0-9]+)"', path.read_text(encoding="utf-8"))
+        match = re.search(
+            r'<svg[^>]* width="([0-9]+)"', path.read_text(encoding="utf-8")
+        )
         self.assertIsNotNone(match)
         return int(match.group(1))
 
@@ -183,7 +191,7 @@ class RichCardsCliTest(unittest.TestCase):
         self.assertEqual(result.exit_code, 0, result.output)
         svg = self.output.read_text(encoding="utf-8")
         self.assertIn("&amp;&amp; </tspan>", svg)
-        self.assertNotIn("&amp;&amp;</tspan><tspan fill=\"#f8f8f2\"> </tspan>", svg)
+        self.assertNotIn('&amp;&amp;</tspan><tspan fill="#f8f8f2"> </tspan>', svg)
 
     def test_shell_comments_do_not_render_italic_spacing(self) -> None:
         result = self.runner.invoke(
@@ -237,7 +245,9 @@ class RichCardsCliTest(unittest.TestCase):
         )
 
         self.assertEqual(result.exit_code, 0, result.output)
-        self.assertIn(">demo.py</tspan></text>", self.output.read_text(encoding="utf-8"))
+        self.assertIn(
+            ">demo.py</tspan></text>", self.output.read_text(encoding="utf-8")
+        )
 
     def test_common_short_options_render_card(self) -> None:
         result = self.runner.invoke(
@@ -345,11 +355,11 @@ class RichCardsCliTest(unittest.TestCase):
         svg = self.output.read_text(encoding="utf-8")
         self.assertIn("I print beautifully ", svg)
         self.assertIn(">❤️</tspan>", svg)
-        self.assertIn('font-family="\'Apple Color Emoji\'', svg)
+        self.assertIn("font-family=\"'Apple Color Emoji'", svg)
         self.assertIn('fill-opacity="0"', svg)
         self.assertIn('fill="#ff3b57"', svg)
         self.assertNotIn('fill="#f8f8f2" font-family="\'Apple Color Emoji\'', svg)
-        self.assertNotIn("<tspan fill=\"#a6e22e\">print</tspan>", svg)
+        self.assertNotIn('<tspan fill="#a6e22e">print</tspan>', svg)
         self.assertNotIn(">❤</tspan><tspan", svg)
 
     def test_explicit_python_lexer_preserves_heart_emoji(self) -> None:
@@ -373,7 +383,9 @@ class RichCardsCliTest(unittest.TestCase):
     def test_word_wrap_keeps_compound_emoji_intact(self) -> None:
         lines = _wrap_fragments([Fragment("aaaaaaaaaaaa👩‍💻b", "#fff")], width=13)
 
-        self.assertEqual("".join(fragment.text for fragment in lines[0]), "aaaaaaaaaaaa")
+        self.assertEqual(
+            "".join(fragment.text for fragment in lines[0]), "aaaaaaaaaaaa"
+        )
         self.assertEqual("".join(fragment.text for fragment in lines[1]), "👩‍💻b")
 
     def test_stdin_writes_svg(self) -> None:
@@ -410,7 +422,7 @@ class RichCardsCliTest(unittest.TestCase):
         self.assertEqual(result.exit_code, 0, result.output)
         svg = self.output.read_text(encoding="utf-8")
         self.assertIn(
-            '<tspan fill="#000080" font-family="\'Symbols Nerd Font Mono\', \'Symbols Nerd Font\'',
+            "<tspan fill=\"#000080\" font-family=\"'Symbols Nerd Font Mono', 'Symbols Nerd Font'",
             svg,
         )
         self.assertIn(">󰣞</tspan>", svg)
@@ -478,7 +490,7 @@ class RichCardsCliTest(unittest.TestCase):
         self.assertIn('href="data:image/png;base64,', svg)
         self.assertIn('preserveAspectRatio="xMidYMid meet"', svg)
         self.assertIn(">Preview</tspan></text>", svg)
-        self.assertNotIn("xml:space=\"preserve\"", svg)
+        self.assertNotIn('xml:space="preserve"', svg)
 
     def test_image_defaults_to_auto_width(self) -> None:
         image = Path(self.tmp.name) / "sample.png"

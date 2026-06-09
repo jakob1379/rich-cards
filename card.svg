@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1058" height="695" viewBox="0 0 1058 695" role="img" aria-label="Rendered code card">
+<defs>
+  <linearGradient id="card-bg" x1="0" y1="0" x2="1" y2="1">
+    <stop offset="0%" stop-color="#f7fbff"/>
+    <stop offset="52%" stop-color="#bdefff"/>
+    <stop offset="100%" stop-color="#48c7df"/>
+  </linearGradient>
+  <filter id="soft-shadow" x="-20%" y="-20%" width="140%" height="150%">
+    <feDropShadow dx="0" dy="20" stdDeviation="22" flood-color="#101114" flood-opacity="0.38"/>
+  </filter>
+</defs>
+<rect width="100%" height="100%" fill="url(#card-bg)"/>
+<rect x="72" y="72" width="914" height="551" rx="12" fill="#26282b" stroke="#3b3e43" stroke-width="3" filter="url(#soft-shadow)"/>
+<circle cx="102" cy="97" r="6" fill="#ff5f57"/>
+<circle cx="122" cy="97" r="6" fill="#ffbd2e"/>
+<circle cx="142" cy="97" r="6" fill="#28c840"/>
+<text x="529.0" y="103" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="13" text-anchor="middle"><tspan fill="#8d9199">pyproject.toml</tspan></text>
+<line x1="72" y1="122" x2="986" y2="122" stroke="#34373c"/>
+<text x="106" y="167" font-family="'JetBrains Mono', 'Cascadia Code', 'SFMono-Regular', Menlo, Consolas, monospace" font-size="15" xml:space="preserve"><tspan fill="#f92672">[build-system]</tspan></text>
+<text x="106" y="188" font-family="'JetBrains Mono', 'Cascadia Code', 'SFMono-Regular', Menlo, Consolas, monospace" font-size="15" xml:space="preserve"><tspan fill="#f8f8f2">requires </tspan><tspan fill="#f92672">=</tspan><tspan fill="#f8f8f2"> [</tspan><tspan fill="#e6db74">&quot;uv_build&gt;=0.11.17,&lt;0.12.0&quot;</tspan><tspan fill="#f8f8f2">]</tspan></text>
+<text x="106" y="209" font-family="'JetBrains Mono', 'Cascadia Code', 'SFMono-Regular', Menlo, Consolas, monospace" font-size="15" xml:space="preserve"><tspan fill="#f8f8f2">build-backend </tspan><tspan fill="#f92672">= </tspan><tspan fill="#e6db74">&quot;uv_build&quot;</tspan></text>
+<text x="106" y="230" font-family="'JetBrains Mono', 'Cascadia Code', 'SFMono-Regular', Menlo, Consolas, monospace" font-size="15" xml:space="preserve"></text>
+<text x="106" y="251" font-family="'JetBrains Mono', 'Cascadia Code', 'SFMono-Regular', Menlo, Consolas, monospace" font-size="15" xml:space="preserve"><tspan fill="#f92672">[project]</tspan></text>
+<text x="106" y="272" font-family="'JetBrains Mono', 'Cascadia Code', 'SFMono-Regular', Menlo, Consolas, monospace" font-size="15" xml:space="preserve"><tspan fill="#f8f8f2">name </tspan><tspan fill="#f92672">= </tspan><tspan fill="#e6db74">&quot;rich-card&quot;</tspan></text>
+<text x="106" y="293" font-family="'JetBrains Mono', 'Cascadia Code', 'SFMono-Regular', Menlo, Consolas, monospace" font-size="15" xml:space="preserve"><tspan fill="#f8f8f2">version </tspan><tspan fill="#f92672">= </tspan><tspan fill="#e6db74">&quot;0.1.0&quot;</tspan></text>
+<text x="106" y="314" font-family="'JetBrains Mono', 'Cascadia Code', 'SFMono-Regular', Menlo, Consolas, monospace" font-size="15" xml:space="preserve"><tspan fill="#f8f8f2">description </tspan><tspan fill="#f92672">= </tspan><tspan fill="#e6db74">&quot;Render syntax-highlighted code cards on polished gradient SVG backgrounds.&quot;</tspan></text>
+<text x="106" y="335" font-family="'JetBrains Mono', 'Cascadia Code', 'SFMono-Regular', Menlo, Consolas, monospace" font-size="15" xml:space="preserve"><tspan fill="#f8f8f2">readme </tspan><tspan fill="#f92672">= </tspan><tspan fill="#e6db74">&quot;README.md&quot;</tspan></text>
+<text x="106" y="356" font-family="'JetBrains Mono', 'Cascadia Code', 'SFMono-Regular', Menlo, Consolas, monospace" font-size="15" xml:space="preserve"><tspan fill="#f8f8f2">authors </tspan><tspan fill="#f92672">=</tspan><tspan fill="#f8f8f2"> [</tspan></text>
+<text x="106" y="377" font-family="'JetBrains Mono', 'Cascadia Code', 'SFMono-Regular', Menlo, Consolas, monospace" font-size="15" xml:space="preserve"><tspan fill="#f8f8f2">  {name = </tspan><tspan fill="#e6db74">&quot;Jakob Stender Guldberg&quot;</tspan><tspan fill="#f8f8f2">, email = </tspan><tspan fill="#e6db74">&quot;jakob1379@gmail.com&quot;</tspan><tspan fill="#f8f8f2">}</tspan></text>
+<text x="106" y="398" font-family="'JetBrains Mono', 'Cascadia Code', 'SFMono-Regular', Menlo, Consolas, monospace" font-size="15" xml:space="preserve"><tspan fill="#f8f8f2">]</tspan></text>
+<text x="106" y="419" font-family="'JetBrains Mono', 'Cascadia Code', 'SFMono-Regular', Menlo, Consolas, monospace" font-size="15" xml:space="preserve"><tspan fill="#f8f8f2">requires-python </tspan><tspan fill="#f92672">= </tspan><tspan fill="#e6db74">&quot;&gt;=3.14&quot;</tspan></text>
+<text x="106" y="440" font-family="'JetBrains Mono', 'Cascadia Code', 'SFMono-Regular', Menlo, Consolas, monospace" font-size="15" xml:space="preserve"><tspan fill="#f8f8f2">dependencies </tspan><tspan fill="#f92672">=</tspan><tspan fill="#f8f8f2"> [</tspan></text>
+<text x="106" y="461" font-family="'JetBrains Mono', 'Cascadia Code', 'SFMono-Regular', Menlo, Consolas, monospace" font-size="15" xml:space="preserve"><tspan fill="#f8f8f2">  </tspan><tspan fill="#e6db74">&quot;defusedxml&gt;=0.7.1&quot;</tspan><tspan fill="#f8f8f2">,</tspan></text>
+<text x="106" y="482" font-family="'JetBrains Mono', 'Cascadia Code', 'SFMono-Regular', Menlo, Consolas, monospace" font-size="15" xml:space="preserve"><tspan fill="#f8f8f2">  </tspan><tspan fill="#e6db74">&quot;rich&gt;=15.0.0&quot;</tspan><tspan fill="#f8f8f2">,</tspan></text>
+<text x="106" y="503" font-family="'JetBrains Mono', 'Cascadia Code', 'SFMono-Regular', Menlo, Consolas, monospace" font-size="15" xml:space="preserve"><tspan fill="#f8f8f2">  </tspan><tspan fill="#e6db74">&quot;typer&gt;=0.26.7&quot;</tspan></text>
+<text x="106" y="524" font-family="'JetBrains Mono', 'Cascadia Code', 'SFMono-Regular', Menlo, Consolas, monospace" font-size="15" xml:space="preserve"><tspan fill="#f8f8f2">]</tspan></text>
+<text x="106" y="545" font-family="'JetBrains Mono', 'Cascadia Code', 'SFMono-Regular', Menlo, Consolas, monospace" font-size="15" xml:space="preserve"></text>
+<text x="106" y="566" font-family="'JetBrains Mono', 'Cascadia Code', 'SFMono-Regular', Menlo, Consolas, monospace" font-size="15" xml:space="preserve"><tspan fill="#f92672">[project.scripts]</tspan></text>
+<text x="106" y="587" font-family="'JetBrains Mono', 'Cascadia Code', 'SFMono-Regular', Menlo, Consolas, monospace" font-size="15" xml:space="preserve"><tspan fill="#f8f8f2">rich-card </tspan><tspan fill="#f92672">= </tspan><tspan fill="#e6db74">&quot;rich_card.cli:app&quot;</tspan></text>
+</svg>
