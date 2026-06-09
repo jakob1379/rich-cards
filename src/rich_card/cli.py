@@ -139,22 +139,35 @@ def render(
         str | None,
         typer.Option("--title", "-t", help="Optional card title shown in the card chrome."),
     ] = None,
-    caption: Annotated[
-        str | None,
-        typer.Option("--caption", "-C", help="Optional small caption below the code block."),
-    ] = None,
     background: Annotated[
         BackgroundPreset,
         typer.Option("--background", "-b", help="Gradient preset."),
     ] = BackgroundPreset.aurora,
     width: Annotated[
-        int,
-        typer.Option("--width", "-w", min=520, max=2400, help="SVG canvas width in pixels."),
-    ] = 1080,
+        int | None,
+        typer.Option("--width", "-w", min=520, max=2400, help="Fixed SVG canvas width in pixels."),
+    ] = None,
     padding: Annotated[
         int,
-        typer.Option("--padding", "-p", min=24, max=240, help="Outer canvas padding in pixels."),
+        typer.Option(
+            "--padding",
+            "--background-padding",
+            "-p",
+            min=24,
+            max=240,
+            help="Background padding outside the terminal card in pixels.",
+        ),
     ] = 72,
+    inner_padding: Annotated[
+        int | None,
+        typer.Option(
+            "--inner-padding",
+            "--terminal-padding",
+            min=0,
+            max=160,
+            help="Padding inside the terminal card around the content or image.",
+        ),
+    ] = None,
     radius: Annotated[
         int,
         typer.Option("--radius", "-r", min=4, max=80, help="Rounded card corner radius in pixels."),
@@ -170,7 +183,7 @@ def render(
     tab_size: Annotated[
         int,
         typer.Option("--tab-size", "-T", min=1, max=12, help="Tab expansion width."),
-    ] = 4,
+    ] = 2,
     list_themes: Annotated[
         bool,
         typer.Option("--list-themes", help="List syntax themes and exit."),
@@ -182,6 +195,11 @@ def render(
         return
 
     try:
+        inner_padding_options = (
+            {}
+            if inner_padding is None
+            else {"inner_padding_x": inner_padding, "inner_padding_y": inner_padding}
+        )
         if image is not None:
             _validate_image_mode(source, content)
             svg = render_image_card_svg(
@@ -189,10 +207,10 @@ def render(
                 image.name,
                 CardOptions(
                     title=title if title is not None else image.name,
-                    caption=caption,
                     background=background.value,
                     width=width,
                     padding=padding,
+                    **inner_padding_options,
                     radius=radius,
                 ),
             )
@@ -208,10 +226,10 @@ def render(
                     theme=validated_theme,
                     file_name=source_name,
                     title=resolved_title,
-                    caption=caption,
                     background=background.value,
                     width=width,
                     padding=padding,
+                    **inner_padding_options,
                     radius=radius,
                     line_numbers=line_numbers,
                     word_wrap=word_wrap,

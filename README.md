@@ -24,8 +24,8 @@ rich-card \
   --content $'TAX_RATES = {"CA": 0.0825, "NY": 0.05}\n\nprint(TAX_RATES)' \
   --lexer python \
   --theme monokai-extended \
-  --caption "clean code card" \
   --background aurora \
+  --inner-padding 28 \
   --line-numbers \
   -o tax-card.svg
 ```
@@ -33,7 +33,15 @@ rich-card \
 Images can be framed in the same card style:
 
 ```bash
-rich-card --image screenshot.png --title "Build result" --caption "latest run" -o screenshot-card.svg
+rich-card --image screenshot.png --title "Build result" --inner-padding 24 -o screenshot-card.svg
+```
+
+Cards auto-size to their content by default. Pass `--width` when you want a
+fixed canvas width. Use `--background-padding` for the outer gradient margin
+and `--inner-padding` for the padding inside the terminal card:
+
+```bash
+rich-card --content 'print("hi")' --width 1080 --background-padding 80 --inner-padding 32 -o fixed-card.svg
 ```
 
 Useful commands:

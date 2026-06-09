@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 from dataclasses import dataclass
 from html import escape
+from math import ceil
 import re
 import struct
 from unicodedata import category
@@ -59,17 +60,26 @@ CARD_FILL = "#26282b"
 CARD_STROKE = "#3b3e43"
 MUTED_TEXT = "#8d9199"
 DEFAULT_TEXT = "#f0f2f5"
-FONT_STACK = (
+CODE_FONT_STACK = (
+    "'JetBrains Mono', 'Cascadia Code', 'SFMono-Regular', Menlo, Consolas, monospace"
+)
+UI_FONT_STACK = (
+    "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, "
+    "'Helvetica Neue', Arial, sans-serif"
+)
+CHROME_FONT_STACK = UI_FONT_STACK
+EMOJI_TEXT_FALLBACK_STACK = (
     "'JetBrains Mono', 'Cascadia Code', 'SFMono-Regular', Menlo, Consolas, "
-    "'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', 'Twemoji Mozilla', monospace"
+    "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, "
+    "'Helvetica Neue', Arial, sans-serif"
 )
 EMOJI_FONT_STACK = (
     "'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', 'Twemoji Mozilla', "
-    "'JetBrains Mono', 'Cascadia Code', 'SFMono-Regular', Menlo, Consolas, monospace"
+    f"{EMOJI_TEXT_FALLBACK_STACK}"
 )
 ICON_FONT_STACK = (
     "'Symbols Nerd Font Mono', 'Symbols Nerd Font', "
-    "'JetBrains Mono', 'Cascadia Code', 'SFMono-Regular', Menlo, Consolas, monospace"
+    f"{CODE_FONT_STACK}"
 )
 CHAR_WIDTH = 9.4
 LINE_HEIGHT = 21
@@ -77,7 +87,8 @@ FONT_SIZE = 15
 INNER_PADDING_X = 34
 INNER_PADDING_Y = 30
 TITLE_BAR_HEIGHT = 50
-CAPTION_GAP = 20
+TITLE_BAR_TEXT_PADDING_X = 96
+MIN_CARD_WIDTH = 160
 ANSI_ESCAPE_PATTERN = re.compile(r"\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07]*(?:\x07|\x1b\\)|[@-Z\\-_])")
 ANSI_CONSOLE = Console(color_system="truecolor", force_terminal=True)
 
@@ -147,14 +158,15 @@ class CardOptions:
     theme: str = "monokai-extended"
     file_name: str | None = None
     title: str | None = None
-    caption: str | None = None
     background: str = "aurora"
-    width: int = 1080
+    width: int | None = None
     padding: int = 72
+    inner_padding_x: int = INNER_PADDING_X
+    inner_padding_y: int = INNER_PADDING_Y
     radius: int = 30
     line_numbers: bool = False
     word_wrap: bool = False
-    tab_size: int = 4
+    tab_size: int = 2
 
 
 @dataclass(frozen=True)
@@ -179,22 +191,32 @@ def render_code_card_svg(code: str, options: CardOptions) -> str:
         raise UnknownStyleError(f"Unknown background preset '{options.background}'. Use one of: {known}.")
 
     raw_lines = _highlight_lines(code, options)
-    card_width = options.width - (options.padding * 2)
-    code_width = card_width - (INNER_PADDING_X * 2)
-    max_columns = max(20, int(code_width / CHAR_WIDTH))
-    lines = _prepare_lines(raw_lines, max_columns, options.line_numbers, options.word_wrap)
+    if options.width is None:
+        lines = _prepare_lines(
+            raw_lines,
+            _unwrapped_columns(raw_lines, options.line_numbers),
+            options.line_numbers,
+            False,
+        )
+        width = _auto_code_canvas_width(lines, options)
+    else:
+        width = options.width
+        card_width = width - (options.padding * 2)
+        code_width = max(1, card_width - (options.inner_padding_x * 2))
+        max_columns = max(20, int(code_width / CHAR_WIDTH))
+        lines = _prepare_lines(raw_lines, max_columns, options.line_numbers, options.word_wrap)
 
+    card_width = width - (options.padding * 2)
     code_height = max(1, len(lines)) * LINE_HEIGHT
-    caption_height = LINE_HEIGHT + CAPTION_GAP if options.caption else 0
-    card_height = TITLE_BAR_HEIGHT + INNER_PADDING_Y + code_height + caption_height + INNER_PADDING_Y
+    card_height = TITLE_BAR_HEIGHT + options.inner_padding_y + code_height + options.inner_padding_y
     height = card_height + (options.padding * 2)
     card_x = options.padding
     card_y = options.padding
-    code_x = card_x + INNER_PADDING_X
-    code_y = card_y + TITLE_BAR_HEIGHT + INNER_PADDING_Y + FONT_SIZE
+    code_x = card_x + options.inner_padding_x
+    code_y = card_y + TITLE_BAR_HEIGHT + options.inner_padding_y + FONT_SIZE
 
     parts = [
-        _svg_open(options.width, height),
+        _svg_open(width, height),
         _defs(*gradients),
         f'<rect width="100%" height="100%" fill="url(#card-bg)"/>',
         f'<rect x="{card_x}" y="{card_y}" width="{card_width}" height="{card_height}" '
@@ -203,13 +225,6 @@ def render_code_card_svg(code: str, options: CardOptions) -> str:
         _title_bar(card_x, card_y, card_width, options.title),
         _code_lines(lines, code_x, code_y),
     ]
-    if options.caption:
-        caption_y = code_y + code_height + CAPTION_GAP
-        parts.append(
-            f'<text x="{code_x}" y="{caption_y}" font-family="{FONT_STACK}" font-size="13">'
-            f'{_inline_tspans(options.caption, MUTED_TEXT)}'
-            "</text>"
-        )
     parts.append("</svg>")
     return "\n".join(parts)
 
@@ -221,21 +236,25 @@ def render_image_card_svg(image: bytes, file_name: str, options: CardOptions) ->
         raise UnknownStyleError(f"Unknown background preset '{options.background}'. Use one of: {known}.")
 
     content = _load_image_content(image, file_name)
-    card_width = options.width - (options.padding * 2)
-    image_area_width = card_width - (INNER_PADDING_X * 2)
+    if options.width is None:
+        width = _auto_image_canvas_width(content, options)
+    else:
+        width = options.width
+
+    card_width = width - (options.padding * 2)
+    image_area_width = max(1, card_width - (options.inner_padding_x * 2))
     scale = min(1.0, image_area_width / content.width)
     image_width = content.width * scale
     image_height = content.height * scale
-    caption_height = LINE_HEIGHT + CAPTION_GAP if options.caption else 0
-    card_height = TITLE_BAR_HEIGHT + INNER_PADDING_Y + image_height + caption_height + INNER_PADDING_Y
+    card_height = TITLE_BAR_HEIGHT + options.inner_padding_y + image_height + options.inner_padding_y
     height = card_height + (options.padding * 2)
     card_x = options.padding
     card_y = options.padding
-    image_x = card_x + INNER_PADDING_X + ((image_area_width - image_width) / 2)
-    image_y = card_y + TITLE_BAR_HEIGHT + INNER_PADDING_Y
+    image_x = card_x + options.inner_padding_x + ((image_area_width - image_width) / 2)
+    image_y = card_y + TITLE_BAR_HEIGHT + options.inner_padding_y
 
     parts = [
-        _svg_open(options.width, height),
+        _svg_open(width, height),
         _defs(*gradients),
         f'<rect width="100%" height="100%" fill="url(#card-bg)"/>',
         f'<rect x="{card_x}" y="{card_y}" width="{card_width}" height="{card_height:.1f}" '
@@ -245,16 +264,42 @@ def render_image_card_svg(image: bytes, file_name: str, options: CardOptions) ->
         f'<image x="{image_x:.1f}" y="{image_y:.1f}" width="{image_width:.1f}" height="{image_height:.1f}" '
         f'href="{content.data_uri}" preserveAspectRatio="xMidYMid meet"/>',
     ]
-    if options.caption:
-        caption_y = image_y + image_height + CAPTION_GAP + FONT_SIZE
-        caption_x = card_x + INNER_PADDING_X
-        parts.append(
-            f'<text x="{caption_x}" y="{caption_y:.1f}" font-family="{FONT_STACK}" font-size="13">'
-            f'{_inline_tspans(options.caption, MUTED_TEXT)}'
-            "</text>"
-        )
     parts.append("</svg>")
     return "\n".join(parts)
+
+
+def _auto_code_canvas_width(lines: list[list[Fragment]], options: CardOptions) -> int:
+    content_width = ceil(max((_line_cell_width(line) for line in lines), default=0) * CHAR_WIDTH)
+    return _auto_canvas_width(content_width, options)
+
+
+def _auto_image_canvas_width(content: ImageContent, options: CardOptions) -> int:
+    return _auto_canvas_width(ceil(content.width), options)
+
+
+def _auto_canvas_width(content_width: int, options: CardOptions) -> int:
+    card_width = max(
+        MIN_CARD_WIDTH,
+        options.inner_padding_x * 2 + content_width,
+        _inline_card_width(options.title, TITLE_BAR_TEXT_PADDING_X),
+    )
+    return card_width + (options.padding * 2)
+
+
+def _inline_card_width(text: str | None, side_padding: int) -> int:
+    if not text:
+        return 0
+    return ceil(cell_len(text) * CHAR_WIDTH) + (side_padding * 2)
+
+
+def _unwrapped_columns(raw_lines: list[list[Fragment]], line_numbers: bool) -> int:
+    content_columns = max((_line_cell_width(line) for line in raw_lines), default=0)
+    number_columns = len(str(len(raw_lines))) + 3 if line_numbers else 0
+    return max(20, content_columns + number_columns)
+
+
+def _line_cell_width(line: list[Fragment]) -> int:
+    return sum(cell_len(fragment.text) for fragment in line)
 
 
 def _load_image_content(image: bytes, file_name: str) -> ImageContent:
@@ -522,7 +567,7 @@ def _title_bar(x: int, y: int, width: int, title: str | None) -> str:
     if title:
         label = (
             f'<text x="{x + width / 2:.1f}" y="{y + 31}" '
-            f'font-family="{FONT_STACK}" font-size="13" text-anchor="middle">'
+            f'font-family="{CHROME_FONT_STACK}" font-size="13" text-anchor="middle">'
             f'{_inline_tspans(title, MUTED_TEXT)}'
             "</text>"
         )
@@ -536,7 +581,7 @@ def _code_lines(lines: list[list[Fragment]], x: int, y: int) -> str:
         line_y = y + (index * LINE_HEIGHT)
         spans, overlays = _line_markup(line, x, line_y)
         output.append(
-            f'<text x="{x}" y="{line_y}" font-family="{FONT_STACK}" '
+            f'<text x="{x}" y="{line_y}" font-family="{CODE_FONT_STACK}" '
             f'font-size="{FONT_SIZE}" xml:space="preserve">'
             f'{"".join(spans)}'
             "</text>"

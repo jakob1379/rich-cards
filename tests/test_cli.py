@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import tempfile
 import unittest
 from pathlib import Path
@@ -7,7 +8,7 @@ from pathlib import Path
 from typer.testing import CliRunner
 
 from rich_card.cli import BackgroundPreset, app
-from rich_card.svg import BACKGROUND_PRESETS, Fragment, _wrap_fragments
+from rich_card.svg import BACKGROUND_PRESETS, CHROME_FONT_STACK, EMOJI_FONT_STACK, Fragment, _wrap_fragments
 
 PNG_IMAGE = (
     b"\x89PNG\r\n\x1a\n"
@@ -35,6 +36,11 @@ class RichCardsCliTest(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.output = Path(self.tmp.name) / "card.svg"
+
+    def svg_width(self, path: Path) -> int:
+        match = re.search(r'<svg[^>]* width="([0-9]+)"', path.read_text(encoding="utf-8"))
+        self.assertIsNotNone(match)
+        return int(match.group(1))
 
     def test_content_writes_svg(self) -> None:
         result = self.runner.invoke(
@@ -64,6 +70,69 @@ class RichCardsCliTest(unittest.TestCase):
         self.assertIn('rx="30"', svg)
         self.assertIn('xml:space="preserve"', svg)
         self.assertIn("#48c7df", svg)
+
+    def test_content_defaults_to_auto_width(self) -> None:
+        result = self.runner.invoke(
+            app,
+            [
+                "--content",
+                "ok",
+                "--output",
+                str(self.output),
+            ],
+        )
+
+        self.assertEqual(result.exit_code, 0, result.output)
+        svg = self.output.read_text(encoding="utf-8")
+        width = self.svg_width(self.output)
+        self.assertLess(width, 520)
+        self.assertNotIn('width="1080"', svg)
+        self.assertIn(f'viewBox="0 0 {width} ', svg)
+
+    def test_content_expands_tabs_to_two_spaces_by_default(self) -> None:
+        result = self.runner.invoke(
+            app,
+            [
+                "--content",
+                "\tfoo",
+                "--lexer",
+                "text",
+                "--output",
+                str(self.output),
+            ],
+        )
+
+        self.assertEqual(result.exit_code, 0, result.output)
+        svg = self.output.read_text(encoding="utf-8")
+        self.assertIn(">  foo</tspan>", svg)
+        self.assertNotIn(">    foo</tspan>", svg)
+
+    def test_auto_width_tracks_longest_code_line(self) -> None:
+        short_output = Path(self.tmp.name) / "short.svg"
+        long_output = Path(self.tmp.name) / "long.svg"
+
+        short_result = self.runner.invoke(
+            app,
+            [
+                "--content",
+                "short",
+                "--output",
+                str(short_output),
+            ],
+        )
+        long_result = self.runner.invoke(
+            app,
+            [
+                "--content",
+                "this is a much longer line of code",
+                "--output",
+                str(long_output),
+            ],
+        )
+
+        self.assertEqual(short_result.exit_code, 0, short_result.output)
+        self.assertEqual(long_result.exit_code, 0, long_result.output)
+        self.assertGreater(self.svg_width(long_output), self.svg_width(short_output))
 
     def test_render_has_no_stderr_output(self) -> None:
         result = self.runner.invoke(
@@ -178,8 +247,6 @@ class RichCardsCliTest(unittest.TestCase):
                 "print('hello')",
                 "-s",
                 "monokai-extended",
-                "-C",
-                "sample caption",
                 "-b",
                 "electric-twilight",
                 "-w",
@@ -202,8 +269,46 @@ class RichCardsCliTest(unittest.TestCase):
         self.assertIn('width="640"', svg)
         self.assertIn('rx="44"', svg)
         self.assertIn(">1 │ </tspan>", svg)
-        self.assertIn("sample caption", svg)
         self.assertIn("#0b1026", svg)
+
+    def test_padding_options_adjust_background_and_terminal_padding(self) -> None:
+        result = self.runner.invoke(
+            app,
+            [
+                "--content",
+                "print('hello')",
+                "--width",
+                "640",
+                "--background-padding",
+                "40",
+                "--inner-padding",
+                "20",
+                "--output",
+                str(self.output),
+            ],
+        )
+
+        self.assertEqual(result.exit_code, 0, result.output)
+        svg = self.output.read_text(encoding="utf-8")
+        self.assertIn('<rect x="40" y="40" width="560" height="111"', svg)
+        self.assertIn('<text x="60" y="125"', svg)
+
+    def test_caption_option_is_not_supported(self) -> None:
+        result = self.runner.invoke(
+            app,
+            [
+                "--content",
+                "print('hello')",
+                "--caption",
+                "removed",
+                "--output",
+                str(self.output),
+            ],
+        )
+
+        self.assertNotEqual(result.exit_code, 0)
+        self.assertIn("No such option", result.output)
+        self.assertIn("--caption", result.output)
 
     def test_svg_renders_emoji_with_font_fallbacks(self) -> None:
         result = self.runner.invoke(
@@ -213,8 +318,6 @@ class RichCardsCliTest(unittest.TestCase):
                 "print('🚀✨')  # shipped ✅",
                 "--title",
                 "Release 🚀",
-                "--caption",
-                "Ready ✅",
                 "--output",
                 str(self.output),
             ],
@@ -224,9 +327,9 @@ class RichCardsCliTest(unittest.TestCase):
         svg = self.output.read_text(encoding="utf-8")
         self.assertIn("🚀✨", svg)
         self.assertIn("Release ", svg)
-        self.assertIn("Ready ", svg)
         self.assertIn(">🚀</tspan>", svg)
         self.assertIn(">✅</tspan>", svg)
+        self.assertIn(f'font-family="{EMOJI_FONT_STACK}"', svg)
         self.assertIn("Noto Color Emoji", svg)
         self.assertIn('fill="#ffd447"', svg)
         self.assertIn('fill="#34c759"', svg)
@@ -360,8 +463,6 @@ class RichCardsCliTest(unittest.TestCase):
                 str(image),
                 "--title",
                 "Preview",
-                "--caption",
-                "PNG sample",
                 "--lexer",
                 "not-a-lexer",
                 "--theme",
@@ -377,8 +478,53 @@ class RichCardsCliTest(unittest.TestCase):
         self.assertIn('href="data:image/png;base64,', svg)
         self.assertIn('preserveAspectRatio="xMidYMid meet"', svg)
         self.assertIn(">Preview</tspan></text>", svg)
-        self.assertIn("PNG sample", svg)
         self.assertNotIn("xml:space=\"preserve\"", svg)
+
+    def test_image_defaults_to_auto_width(self) -> None:
+        image = Path(self.tmp.name) / "sample.png"
+        image.write_bytes(PNG_IMAGE)
+
+        result = self.runner.invoke(
+            app,
+            [
+                "--image",
+                str(image),
+                "--output",
+                str(self.output),
+            ],
+        )
+
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertLess(self.svg_width(self.output), 520)
+
+    def test_image_default_title_uses_plain_ui_font_for_digits(self) -> None:
+        file_name = "Screenshot from 2026-06-09 15-26-17.png"
+        image = Path(self.tmp.name) / file_name
+        image.write_bytes(PNG_IMAGE)
+
+        result = self.runner.invoke(
+            app,
+            [
+                "--image",
+                str(image),
+                "--output",
+                str(self.output),
+            ],
+        )
+
+        self.assertEqual(result.exit_code, 0, result.output)
+        svg = self.output.read_text(encoding="utf-8")
+        match = re.search(
+            r'<text [^>]*font-family="([^"]+)"[^>]*text-anchor="middle">(.*?)</text>',
+            svg,
+        )
+        self.assertIsNotNone(match)
+        font_family, title_markup = match.groups()
+        self.assertEqual(CHROME_FONT_STACK, font_family)
+        self.assertIn(file_name, title_markup)
+        self.assertNotIn("Apple Color Emoji", font_family)
+        self.assertNotIn("Noto Color Emoji", font_family)
+        self.assertNotIn("Twemoji Mozilla", font_family)
 
     def test_image_jpeg_writes_image_card(self) -> None:
         image = Path(self.tmp.name) / "sample.jpg"
