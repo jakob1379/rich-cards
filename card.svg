@@ -11,10 +11,13 @@
 </defs>
 <rect width="100%" height="100%" fill="url(#card-bg)"/>
 <rect x="72" y="72" width="914" height="551" rx="12" fill="#26282b" stroke="#3b3e43" stroke-width="3" filter="url(#soft-shadow)"/>
+
 <circle cx="102" cy="97" r="6" fill="#ff5f57"/>
 <circle cx="122" cy="97" r="6" fill="#ffbd2e"/>
 <circle cx="142" cy="97" r="6" fill="#28c840"/>
-<text x="529.0" y="103" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="13" text-anchor="middle"><tspan fill="#8d9199">pyproject.toml</tspan></text>
+<clipPath id="title-clip"><rect x="168" y="72" width="722" height="50"/></clipPath>
+<text x="529.0" y="103" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="13" text-anchor="middle" clip-path="url(#title-clip)"><tspan fill="#8d9199">pyproject.toml</tspan></text>
+
 <line x1="72" y1="122" x2="986" y2="122" stroke="#34373c"/>
 <text x="106" y="167" font-family="'JetBrains Mono', 'Cascadia Code', 'SFMono-Regular', Menlo, Consolas, monospace" font-size="15" xml:space="preserve"><tspan fill="#f92672">[build-system]</tspan></text>
 <text x="106" y="188" font-family="'JetBrains Mono', 'Cascadia Code', 'SFMono-Regular', Menlo, Consolas, monospace" font-size="15" xml:space="preserve"><tspan fill="#f8f8f2">requires </tspan><tspan fill="#f92672">=</tspan><tspan fill="#f8f8f2"> [</tspan><tspan fill="#e6db74">&quot;uv_build&gt;=0.11.17,&lt;0.12.0&quot;</tspan><tspan fill="#f8f8f2">]</tspan></text>

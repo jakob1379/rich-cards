@@ -21,19 +21,25 @@
         nixpkgs.lib.genAttrs systems (system:
           f system (import nixpkgs { inherit system; }));
       updateGeneratedDocs = pkgs:
-        let
-          python = pkgs.python314.withPackages (pythonPackages: [
-            pythonPackages.defusedxml
-            pythonPackages.pygments
-            pythonPackages.rich
-            pythonPackages.typer
-          ]);
-        in
         pkgs.writeShellApplication {
           name = "update-rich-card-generated-docs";
-          runtimeInputs = [ python ];
+          runtimeInputs = [
+            pkgs.prettier
+            pkgs.uv
+          ];
           text = ''
-            python scripts/update_generated_docs.py
+            if [ -n "''${NIX_BUILD_TOP:-}" ]; then
+              case "$PWD" in
+                "$NIX_BUILD_TOP"/*)
+                  echo "Skipping generated README update in the Nix build sandbox; uv run requires Python discovery."
+                  exit 0
+                  ;;
+              esac
+            fi
+
+            export UV_CACHE_DIR="''${UV_CACHE_DIR:-.uv-cache}"
+            uv run python scripts/update_generated_docs.py
+            prettier --write --prose-wrap always README.md
           '';
         };
       hookConfig = pkgs:
@@ -223,7 +229,7 @@
 
             update-generated-docs = {
               enable = true;
-              name = "update generated README and card.svg";
+              name = "update generated README";
               entry = "${docsHook}/bin/update-rich-card-generated-docs";
               language = "system";
               pass_filenames = false;

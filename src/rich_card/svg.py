@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import base64
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from html import escape
 from math import ceil
 import re
@@ -32,6 +32,8 @@ from rich.ansi import AnsiDecoder
 from rich.cells import cell_len, split_graphemes
 from rich.console import Console
 
+from rich_card.config import LOGO_PLACEMENTS, RendererDefaults
+
 BACKGROUND_PRESETS: dict[str, tuple[str, str, str]] = {
     "aurora": ("#f7fbff", "#bdefff", "#48c7df"),
     "blue-raspberry": ("#dff9ff", "#00b4db", "#0083b0"),
@@ -56,36 +58,25 @@ BACKGROUND_PRESETS: dict[str, tuple[str, str, str]] = {
     "winter-neva": ("#a1c4fd", "#c2e9fb", "#eef8ff"),
 }
 
-CARD_FILL = "#26282b"
-CARD_STROKE = "#3b3e43"
-MUTED_TEXT = "#8d9199"
-DEFAULT_TEXT = "#f0f2f5"
-CODE_FONT_STACK = (
-    "'JetBrains Mono', 'Cascadia Code', 'SFMono-Regular', Menlo, Consolas, monospace"
-)
-UI_FONT_STACK = (
-    "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, "
-    "'Helvetica Neue', Arial, sans-serif"
-)
-CHROME_FONT_STACK = UI_FONT_STACK
-EMOJI_TEXT_FALLBACK_STACK = (
-    "'JetBrains Mono', 'Cascadia Code', 'SFMono-Regular', Menlo, Consolas, "
-    "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, "
-    "'Helvetica Neue', Arial, sans-serif"
-)
-EMOJI_FONT_STACK = (
-    "'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', 'Twemoji Mozilla', "
-    f"{EMOJI_TEXT_FALLBACK_STACK}"
-)
-ICON_FONT_STACK = f"'Symbols Nerd Font Mono', 'Symbols Nerd Font', {CODE_FONT_STACK}"
-CHAR_WIDTH = 9.4
-LINE_HEIGHT = 21
-FONT_SIZE = 15
+DEFAULT_RENDERER = RendererDefaults()
+CARD_FILL = DEFAULT_RENDERER.card_fill
+CARD_STROKE = DEFAULT_RENDERER.card_stroke
+MUTED_TEXT = DEFAULT_RENDERER.muted_text
+DEFAULT_TEXT = DEFAULT_RENDERER.default_text
+CODE_FONT_STACK = DEFAULT_RENDERER.code_font_stack
+UI_FONT_STACK = DEFAULT_RENDERER.ui_font_stack
+CHROME_FONT_STACK = DEFAULT_RENDERER.chrome_font_stack
+EMOJI_TEXT_FALLBACK_STACK = DEFAULT_RENDERER.emoji_text_fallback_stack
+EMOJI_FONT_STACK = DEFAULT_RENDERER.emoji_font_stack
+ICON_FONT_STACK = DEFAULT_RENDERER.icon_font_stack
+CHAR_WIDTH = DEFAULT_RENDERER.char_width
+LINE_HEIGHT = DEFAULT_RENDERER.line_height
+FONT_SIZE = DEFAULT_RENDERER.font_size
 INNER_PADDING_X = 34
 INNER_PADDING_Y = 30
-TITLE_BAR_HEIGHT = 50
-TITLE_BAR_TEXT_PADDING_X = 96
-MIN_CARD_WIDTH = 160
+TITLE_BAR_HEIGHT = DEFAULT_RENDERER.title_bar_height
+TITLE_BAR_TEXT_PADDING_X = DEFAULT_RENDERER.title_bar_text_padding_x
+MIN_CARD_WIDTH = DEFAULT_RENDERER.min_card_width
 ANSI_ESCAPE_PATTERN = re.compile(
     r"\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07]*(?:\x07|\x1b\\)|[@-Z\\-_])"
 )
@@ -183,6 +174,9 @@ class CardOptions:
     line_numbers: bool = False
     word_wrap: bool = False
     tab_size: int = 2
+    logo: ImageContent | None = None
+    logo_placement: str = "bar"
+    renderer: RendererDefaults = field(default_factory=RendererDefaults)
 
 
 @dataclass(frozen=True)
@@ -200,7 +194,12 @@ class ImageContent:
     height: float
 
 
+def load_logo_image(image: bytes, file_name: str) -> ImageContent:
+    return _load_image_content(image, file_name)
+
+
 def render_code_card_svg(code: str, options: CardOptions) -> str:
+    renderer = options.renderer
     gradients = BACKGROUND_PRESETS.get(options.background)
     if gradients is None:
         known = ", ".join(sorted(BACKGROUND_PRESETS))
@@ -213,23 +212,23 @@ def render_code_card_svg(code: str, options: CardOptions) -> str:
         lines = _prepare_lines(
             raw_lines,
             _unwrapped_columns(raw_lines, options.line_numbers),
-            options.line_numbers,
-            False,
+            options,
+            word_wrap=False,
         )
         width = _auto_code_canvas_width(lines, options)
     else:
         width = options.width
         card_width = width - (options.padding * 2)
         code_width = max(1, card_width - (options.inner_padding_x * 2))
-        max_columns = max(20, int(code_width / CHAR_WIDTH))
+        max_columns = max(20, int(code_width / renderer.char_width))
         lines = _prepare_lines(
-            raw_lines, max_columns, options.line_numbers, options.word_wrap
+            raw_lines, max_columns, options, word_wrap=options.word_wrap
         )
 
     card_width = width - (options.padding * 2)
-    code_height = max(1, len(lines)) * LINE_HEIGHT
+    code_height = max(1, len(lines)) * renderer.line_height
     card_height = (
-        TITLE_BAR_HEIGHT
+        renderer.title_bar_height
         + options.inner_padding_y
         + code_height
         + options.inner_padding_y
@@ -238,23 +237,44 @@ def render_code_card_svg(code: str, options: CardOptions) -> str:
     card_x = options.padding
     card_y = options.padding
     code_x = card_x + options.inner_padding_x
-    code_y = card_y + TITLE_BAR_HEIGHT + options.inner_padding_y + FONT_SIZE
+    code_y = (
+        card_y
+        + renderer.title_bar_height
+        + options.inner_padding_y
+        + renderer.font_size
+    )
 
     parts = [
         _svg_open(width, height),
         _defs(*gradients),
         '<rect width="100%" height="100%" fill="url(#card-bg)"/>',
         f'<rect x="{card_x}" y="{card_y}" width="{card_width}" height="{card_height}" '
-        f'rx="{options.radius}" fill="{CARD_FILL}" stroke="{CARD_STROKE}" stroke-width="3" '
+        f'rx="{options.radius}" fill="{renderer.card_fill}" '
+        f'stroke="{renderer.card_stroke}" stroke-width="3" '
         f'filter="url(#soft-shadow)"/>',
-        _title_bar(card_x, card_y, card_width, options.title),
-        _code_lines(lines, code_x, code_y),
+        _watermark_logo(
+            options,
+            card_x,
+            card_y + renderer.title_bar_height,
+            card_width,
+            card_height - renderer.title_bar_height,
+        ),
+        _title_bar(
+            card_x,
+            card_y,
+            card_width,
+            options.title,
+            _bar_logo_content(options),
+            renderer,
+        ),
+        _code_lines(lines, code_x, code_y, renderer),
     ]
     parts.append("</svg>")
     return "\n".join(parts)
 
 
 def render_image_card_svg(image: bytes, file_name: str, options: CardOptions) -> str:
+    renderer = options.renderer
     gradients = BACKGROUND_PRESETS.get(options.background)
     if gradients is None:
         known = ", ".join(sorted(BACKGROUND_PRESETS))
@@ -274,7 +294,7 @@ def render_image_card_svg(image: bytes, file_name: str, options: CardOptions) ->
     image_width = content.width * scale
     image_height = content.height * scale
     card_height = (
-        TITLE_BAR_HEIGHT
+        renderer.title_bar_height
         + options.inner_padding_y
         + image_height
         + options.inner_padding_y
@@ -283,16 +303,31 @@ def render_image_card_svg(image: bytes, file_name: str, options: CardOptions) ->
     card_x = options.padding
     card_y = options.padding
     image_x = card_x + options.inner_padding_x + ((image_area_width - image_width) / 2)
-    image_y = card_y + TITLE_BAR_HEIGHT + options.inner_padding_y
+    image_y = card_y + renderer.title_bar_height + options.inner_padding_y
 
     parts = [
         _svg_open(width, height),
         _defs(*gradients),
         '<rect width="100%" height="100%" fill="url(#card-bg)"/>',
         f'<rect x="{card_x}" y="{card_y}" width="{card_width}" height="{card_height:.1f}" '
-        f'rx="{options.radius}" fill="{CARD_FILL}" stroke="{CARD_STROKE}" stroke-width="3" '
+        f'rx="{options.radius}" fill="{renderer.card_fill}" '
+        f'stroke="{renderer.card_stroke}" stroke-width="3" '
         f'filter="url(#soft-shadow)"/>',
-        _title_bar(card_x, card_y, card_width, options.title),
+        _watermark_logo(
+            options,
+            card_x,
+            card_y + renderer.title_bar_height,
+            card_width,
+            card_height - renderer.title_bar_height,
+        ),
+        _title_bar(
+            card_x,
+            card_y,
+            card_width,
+            options.title,
+            _bar_logo_content(options),
+            renderer,
+        ),
         f'<image x="{image_x:.1f}" y="{image_y:.1f}" width="{image_width:.1f}" height="{image_height:.1f}" '
         f'href="{content.data_uri}" preserveAspectRatio="xMidYMid meet"/>',
     ]
@@ -302,7 +337,8 @@ def render_image_card_svg(image: bytes, file_name: str, options: CardOptions) ->
 
 def _auto_code_canvas_width(lines: list[list[Fragment]], options: CardOptions) -> int:
     content_width = ceil(
-        max((_line_cell_width(line) for line in lines), default=0) * CHAR_WIDTH
+        max((_line_cell_width(line) for line in lines), default=0)
+        * options.renderer.char_width
     )
     return _auto_canvas_width(content_width, options)
 
@@ -312,18 +348,25 @@ def _auto_image_canvas_width(content: ImageContent, options: CardOptions) -> int
 
 
 def _auto_canvas_width(content_width: int, options: CardOptions) -> int:
+    logo_width = _logo_bar_reserved_width(_bar_logo_content(options), options.renderer)
     card_width = max(
-        MIN_CARD_WIDTH,
+        options.renderer.min_card_width,
         options.inner_padding_x * 2 + content_width,
-        _inline_card_width(options.title, TITLE_BAR_TEXT_PADDING_X),
+        _inline_card_width(
+            options.title,
+            options.renderer.title_bar_text_padding_x + logo_width,
+            options.renderer,
+        ),
     )
     return card_width + (options.padding * 2)
 
 
-def _inline_card_width(text: str | None, side_padding: int) -> int:
+def _inline_card_width(
+    text: str | None, side_padding: int, renderer: RendererDefaults
+) -> int:
     if not text:
         return 0
-    return ceil(cell_len(text) * CHAR_WIDTH) + (side_padding * 2)
+    return ceil(cell_len(text) * renderer.char_width) + (side_padding * 2)
 
 
 def _unwrapped_columns(raw_lines: list[list[Fragment]], line_numbers: bool) -> int:
@@ -450,11 +493,11 @@ def _svg_length(value: str) -> float | None:
 
 def _highlight_lines(code: str, options: CardOptions) -> list[list[Fragment]]:
     if not code:
-        return [[Fragment("", DEFAULT_TEXT)]]
+        return [[Fragment("", options.renderer.default_text)]]
 
     has_ansi = ANSI_ESCAPE_PATTERN.search(code)
     if has_ansi and options.lexer is None and options.file_name is None:
-        return _ansi_lines(code.expandtabs(options.tab_size))
+        return _ansi_lines(code.expandtabs(options.tab_size), options.renderer)
     if has_ansi:
         code = ANSI_ESCAPE_PATTERN.sub("", code)
 
@@ -462,11 +505,11 @@ def _highlight_lines(code: str, options: CardOptions) -> list[list[Fragment]]:
     style = _load_style(options.theme)
     lines: list[list[Fragment]] = [[]]
     for token_type, value in lex(code.expandtabs(options.tab_size), lexer):
-        fragment_style = _token_style(token_type, style)
+        fragment_style = _token_style(token_type, style, options.renderer)
         _append_text(lines, value, fragment_style)
     if lines and not lines[-1]:
         lines.pop()
-    return lines or [[Fragment("", DEFAULT_TEXT)]]
+    return lines or [[Fragment("", options.renderer.default_text)]]
 
 
 def _load_lexer(code: str, lexer_name: str | None, file_name: str | None):
@@ -493,21 +536,21 @@ def _load_style(theme: str):
         ) from exc
 
 
-def _ansi_lines(code: str) -> list[list[Fragment]]:
+def _ansi_lines(code: str, renderer: RendererDefaults) -> list[list[Fragment]]:
     lines: list[list[Fragment]] = []
     for text in AnsiDecoder().decode(code):
         line = [
-            _segment_to_fragment(segment.text, segment.style)
+            _segment_to_fragment(segment.text, segment.style, renderer)
             for segment in text.render(ANSI_CONSOLE)
         ]
         lines.append([fragment for fragment in line if fragment.text])
     if lines and not lines[-1]:
         lines.pop()
-    return lines or [[Fragment("", DEFAULT_TEXT)]]
+    return lines or [[Fragment("", renderer.default_text)]]
 
 
-def _segment_to_fragment(text: str, style) -> Fragment:
-    color = DEFAULT_TEXT
+def _segment_to_fragment(text: str, style, renderer: RendererDefaults) -> Fragment:
+    color = renderer.default_text
     if style and style.color:
         triplet = style.color.get_truecolor()
         color = f"#{triplet.red:02x}{triplet.green:02x}{triplet.blue:02x}"
@@ -516,9 +559,11 @@ def _segment_to_fragment(text: str, style) -> Fragment:
     )
 
 
-def _token_style(token_type, style) -> Fragment:
+def _token_style(token_type, style, renderer: RendererDefaults) -> Fragment:
     token_style = style.style_for_token(token_type)
-    color = f"#{token_style['color']}" if token_style["color"] else DEFAULT_TEXT
+    color = (
+        f"#{token_style['color']}" if token_style["color"] else renderer.default_text
+    )
     italic = bool(token_style["italic"]) and token_type not in Comment
     return Fragment("", color, bool(token_style["bold"]), italic)
 
@@ -535,9 +580,11 @@ def _append_text(lines: list[list[Fragment]], text: str, style: Fragment) -> Non
 def _prepare_lines(
     raw_lines: list[list[Fragment]],
     max_columns: int,
-    line_numbers: bool,
+    options: CardOptions,
+    *,
     word_wrap: bool,
 ) -> list[list[Fragment]]:
+    line_numbers = options.line_numbers
     numbered_width = len(str(len(raw_lines))) if line_numbers else 0
     content_columns = max(12, max_columns - (numbered_width + 3 if line_numbers else 0))
     output: list[list[Fragment]] = []
@@ -553,7 +600,9 @@ def _prepare_lines(
                     if wrap_index == 0
                     else " " * numbered_width
                 )
-                output.append([Fragment(f"{label} │ ", MUTED_TEXT), *line])
+                output.append(
+                    [Fragment(f"{label} │ ", options.renderer.muted_text), *line]
+                )
             else:
                 output.append(line)
     return output
@@ -623,32 +672,144 @@ def _defs(start: str, middle: str, end: str) -> str:
 </defs>"""
 
 
-def _title_bar(x: int, y: int, width: int, title: str | None) -> str:
+def _title_bar(
+    x: int,
+    y: int,
+    width: int,
+    title: str | None,
+    logo: ImageContent | None,
+    renderer: RendererDefaults,
+) -> str:
     dots = [
         f'<circle cx="{x + 30}" cy="{y + 25}" r="6" fill="#ff5f57"/>',
         f'<circle cx="{x + 50}" cy="{y + 25}" r="6" fill="#ffbd2e"/>',
         f'<circle cx="{x + 70}" cy="{y + 25}" r="6" fill="#28c840"/>',
     ]
+    logo_markup = _bar_logo(x, y, width, logo, renderer)
+    clip = ""
     label = ""
     if title:
+        left_padding = renderer.title_bar_text_padding_x
+        right_padding = renderer.title_bar_text_padding_x + _logo_bar_reserved_width(
+            logo, renderer
+        )
+        clip_width = max(1, width - left_padding - right_padding)
+        clip = (
+            '<clipPath id="title-clip">'
+            f'<rect x="{x + left_padding}" y="{y}" width="{clip_width}" '
+            f'height="{renderer.title_bar_height}"/>'
+            "</clipPath>"
+        )
         label = (
             f'<text x="{x + width / 2:.1f}" y="{y + 31}" '
-            f'font-family="{CHROME_FONT_STACK}" font-size="13" text-anchor="middle">'
-            f"{_inline_tspans(title, MUTED_TEXT)}"
+            f'font-family="{renderer.chrome_font_stack}" font-size="13" '
+            'text-anchor="middle" clip-path="url(#title-clip)">'
+            f"{_inline_tspans(title, renderer.muted_text, renderer)}"
             "</text>"
         )
-    rule = f'<line x1="{x}" y1="{y + TITLE_BAR_HEIGHT}" x2="{x + width}" y2="{y + TITLE_BAR_HEIGHT}" stroke="#34373c"/>'
-    return "\n".join([*dots, label, rule])
+    rule = (
+        f'<line x1="{x}" y1="{y + renderer.title_bar_height}" '
+        f'x2="{x + width}" y2="{y + renderer.title_bar_height}" stroke="#34373c"/>'
+    )
+    return "\n".join([*dots, clip, label, logo_markup, rule])
 
 
-def _code_lines(lines: list[list[Fragment]], x: int, y: int) -> str:
+def _logo_bar_reserved_width(
+    logo: ImageContent | None, renderer: RendererDefaults
+) -> float:
+    if logo is None:
+        return 0
+    logo_width, _logo_height = _scaled_logo_size(logo, *_bar_logo_size_limit(renderer))
+    return logo_width + renderer.logo_bar_right_padding + 16
+
+
+def _bar_logo(
+    x: int,
+    y: int,
+    width: int,
+    logo: ImageContent | None,
+    renderer: RendererDefaults,
+) -> str:
+    if logo is None:
+        return ""
+
+    max_width, max_height = _bar_logo_size_limit(renderer)
+    max_width = min(max_width, max(1.0, width - renderer.logo_bar_right_padding - 96))
+    logo_width, logo_height = _scaled_logo_size(logo, max_width, max_height)
+    image_x = x + width - renderer.logo_bar_right_padding - logo_width
+    image_y = y + ((renderer.title_bar_height - logo_height) / 2)
+    return (
+        f'<image class="rich-card-logo rich-card-logo-bar" x="{image_x:.1f}" '
+        f'y="{image_y:.1f}" width="{logo_width:.1f}" height="{logo_height:.1f}" '
+        f'href="{logo.data_uri}" preserveAspectRatio="xMidYMid meet"/>'
+    )
+
+
+def _watermark_logo(
+    options: CardOptions, x: int, y: float, width: int, height: float
+) -> str:
+    if not _has_logo_placement(options, "watermark"):
+        return ""
+
+    logo = options.logo
+    if logo is None:
+        return ""
+
+    renderer = options.renderer
+    max_width = width * renderer.logo_watermark_width_ratio
+    max_height = max(1.0, height * 0.72)
+    logo_width, logo_height = _scaled_logo_size(logo, max_width, max_height)
+    image_x = x + ((width - logo_width) / 2)
+    image_y = y + ((height - logo_height) / 2)
+    return (
+        f'<image class="rich-card-logo rich-card-logo-watermark" x="{image_x:.1f}" '
+        f'y="{image_y:.1f}" width="{logo_width:.1f}" height="{logo_height:.1f}" '
+        f'opacity="{renderer.logo_watermark_opacity:.3g}" href="{logo.data_uri}" '
+        'preserveAspectRatio="xMidYMid meet"/>'
+    )
+
+
+def _bar_logo_size_limit(renderer: RendererDefaults) -> tuple[float, float]:
+    return (
+        float(renderer.logo_bar_max_width),
+        float(min(renderer.logo_bar_max_height, renderer.title_bar_height)),
+    )
+
+
+def _has_logo_placement(options: CardOptions, placement: str) -> bool:
+    if options.logo is None:
+        return False
+    if options.logo_placement not in LOGO_PLACEMENTS:
+        raise UnknownStyleError(
+            "Unknown logo placement "
+            f"'{options.logo_placement}'. Use one of: {', '.join(sorted(LOGO_PLACEMENTS))}."
+        )
+    return options.logo_placement in {placement, "both"}
+
+
+def _bar_logo_content(options: CardOptions) -> ImageContent | None:
+    if _has_logo_placement(options, "bar"):
+        return options.logo
+    return None
+
+
+def _scaled_logo_size(
+    logo: ImageContent, max_width: float, max_height: float
+) -> tuple[float, float]:
+    scale = min(max_width / logo.width, max_height / logo.height)
+    return logo.width * scale, logo.height * scale
+
+
+def _code_lines(
+    lines: list[list[Fragment]], x: int, y: int, renderer: RendererDefaults
+) -> str:
     output: list[str] = []
     for index, line in enumerate(lines):
-        line_y = y + (index * LINE_HEIGHT)
-        spans, overlays = _line_markup(line, x, line_y)
+        line_y = y + (index * renderer.line_height)
+        spans, overlays = _line_markup(line, x, line_y, renderer)
         output.append(
-            f'<text x="{x}" y="{line_y}" font-family="{CODE_FONT_STACK}" '
-            f'font-size="{FONT_SIZE}" xml:space="preserve">'
+            f'<text x="{x}" y="{line_y}" font-family="{renderer.code_font_stack}" '
+            f'font-size="{renderer.font_size}" xml:space="preserve">'
             f"{''.join(spans)}"
             "</text>"
         )
@@ -656,18 +817,24 @@ def _code_lines(lines: list[list[Fragment]], x: int, y: int) -> str:
     return "\n".join(output)
 
 
-def _line_markup(line: list[Fragment], x: int, y: int) -> tuple[list[str], list[str]]:
+def _line_markup(
+    line: list[Fragment], x: int, y: int, renderer: RendererDefaults
+) -> tuple[list[str], list[str]]:
     spans: list[str] = []
     overlays: list[str] = []
     cell_offset = 0
     for fragment in _coalesce_whitespace_fragments(line):
         if not fragment.text:
             continue
-        spans.extend(_fragment_tspans(fragment))
+        spans.extend(_fragment_tspans(fragment, renderer))
         for start, end, grapheme_width in split_graphemes(fragment.text)[0]:
             grapheme = fragment.text[start:end]
             overlay = _emoji_overlay(
-                grapheme, x + (cell_offset * CHAR_WIDTH), y, grapheme_width
+                grapheme,
+                x + (cell_offset * renderer.char_width),
+                y,
+                grapheme_width,
+                renderer,
             )
             if overlay:
                 overlays.append(overlay)
@@ -691,7 +858,7 @@ def _coalesce_whitespace_fragments(line: list[Fragment]) -> list[Fragment]:
     return output
 
 
-def _fragment_tspans(fragment: Fragment) -> list[str]:
+def _fragment_tspans(fragment: Fragment, renderer: RendererDefaults) -> list[str]:
     spans: list[str] = []
     text = ""
     mode = "normal"
@@ -699,23 +866,23 @@ def _fragment_tspans(fragment: Fragment) -> list[str]:
         grapheme = fragment.text[start:end]
         grapheme_mode = _grapheme_mode(grapheme)
         if text and grapheme_mode != mode:
-            spans.append(_tspan(text, fragment, mode))
+            spans.append(_tspan(text, fragment, mode, renderer))
             text = ""
         text += grapheme
         mode = grapheme_mode
     if text:
-        spans.append(_tspan(text, fragment, mode))
+        spans.append(_tspan(text, fragment, mode, renderer))
     return spans
 
 
-def _inline_tspans(text: str, color: str) -> str:
-    return "".join(_fragment_tspans(Fragment(text, color)))
+def _inline_tspans(text: str, color: str, renderer: RendererDefaults) -> str:
+    return "".join(_fragment_tspans(Fragment(text, color), renderer))
 
 
-def _tspan(text: str, fragment: Fragment, mode: str) -> str:
+def _tspan(text: str, fragment: Fragment, mode: str, renderer: RendererDefaults) -> str:
     if mode == "emoji":
         attrs = [
-            f'font-family="{EMOJI_FONT_STACK}"',
+            f'font-family="{renderer.emoji_font_stack}"',
             'style="font-variant-emoji: emoji;"',
         ]
         if _has_color_overlay(text):
@@ -723,7 +890,7 @@ def _tspan(text: str, fragment: Fragment, mode: str) -> str:
     elif mode == "icon":
         attrs = [
             f'fill="{fragment.color}"',
-            f'font-family="{ICON_FONT_STACK}"',
+            f'font-family="{renderer.icon_font_stack}"',
         ]
     else:
         attrs = [f'fill="{fragment.color}"']
@@ -789,15 +956,17 @@ def _has_color_overlay(text: str) -> bool:
     )
 
 
-def _emoji_overlay(text: str, x: float, baseline_y: int, cells: int) -> str:
+def _emoji_overlay(
+    text: str, x: float, baseline_y: int, cells: int, renderer: RendererDefaults
+) -> str:
     svg = _emoji_svg(text)
     if not svg:
         return ""
 
-    size = FONT_SIZE + 2
-    slot_width = max(size, cells * CHAR_WIDTH)
+    size = renderer.font_size + 2
+    slot_width = max(size, cells * renderer.char_width)
     image_x = x + ((slot_width - size) / 2)
-    image_y = baseline_y - FONT_SIZE + 1
+    image_y = baseline_y - renderer.font_size + 1
     scale = size / 32
     return f'<g transform="translate({image_x:.1f} {image_y:.1f}) scale({scale:.3f})">{svg}</g>'
 

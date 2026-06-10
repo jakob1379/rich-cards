@@ -9,15 +9,20 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 README = ROOT / "README.md"
 SOURCE = ROOT / "src"
+BEGIN_CLI_REFERENCE = "<!-- BEGIN CLI REFERENCE -->"
+END_CLI_REFERENCE = "<!-- END CLI REFERENCE -->"
 
 
 def main() -> None:
     env = os.environ.copy()
     env.setdefault("UV_CACHE_DIR", str(ROOT / ".uv-cache"))
+    env["XDG_CONFIG_HOME"] = str(ROOT / ".generated-config")
     env["PYTHONPATH"] = _pythonpath(env)
 
     cli_docs = _run(
         [
+            sys.executable,
+            "-m",
             "typer",
             "--app",
             "app",
@@ -30,7 +35,7 @@ def main() -> None:
         env,
     )
     _write_card_svg()
-    README.write_text(_readme(_demote_heading(cli_docs)), encoding="utf-8")
+    _update_readme(_demote_heading(cli_docs))
 
 
 def _pythonpath(env: dict[str, str]) -> str:
@@ -44,7 +49,15 @@ def _write_card_svg() -> None:
     sys.path.insert(0, str(SOURCE))
     from rich_card.cli import app
 
-    app(args=["pyproject.toml"], prog_name="rich-card")
+    old_xdg_config_home = os.environ.get("XDG_CONFIG_HOME")
+    os.environ["XDG_CONFIG_HOME"] = str(ROOT / ".generated-config")
+    try:
+        app(args=["pyproject.toml"], prog_name="rich-card", standalone_mode=False)
+    finally:
+        if old_xdg_config_home is None:
+            os.environ.pop("XDG_CONFIG_HOME", None)
+        else:
+            os.environ["XDG_CONFIG_HOME"] = old_xdg_config_home
 
 
 def _run(command: list[str], env: dict[str, str]) -> str:
@@ -72,62 +85,20 @@ def _demote_heading(markdown: str) -> str:
     return "\n".join(lines).strip()
 
 
-def _readme(cli_docs: str) -> str:
-    return f"""rich-card
-=========
+def _update_readme(cli_docs: str) -> None:
+    readme = README.read_text(encoding="utf-8")
+    begin_index = readme.find(BEGIN_CLI_REFERENCE)
+    end_index = readme.find(END_CLI_REFERENCE)
+    if begin_index == -1 or end_index == -1 or begin_index > end_index:
+        raise SystemExit("Expected one ordered CLI reference marker pair in README.md.")
+    if readme.find(BEGIN_CLI_REFERENCE, begin_index + 1) != -1:
+        raise SystemExit("Expected only one begin CLI reference marker in README.md.")
+    if readme.find(END_CLI_REFERENCE, end_index + 1) != -1:
+        raise SystemExit("Expected only one end CLI reference marker in README.md.")
 
-Render syntax-highlighted code, terminal output, and images as polished SVG
-terminal cards on gradient backgrounds. The CLI uses Typer for commands and an
-in-process Pygments style based on bat's Monokai Extended colors.
-
-![Rendered rich-card example](card.svg)
-
-## Quick Start
-
-Render a source file or inline snippet:
-
-```bash
-rich-card pyproject.toml
-rich-card --content 'print(\"hi\")' --lexer python -o hello.svg
-```
-
-Piped terminal output is read from stdin. ANSI colors are preserved, and eza
-icons render when a Nerd Font such as Symbols Nerd Font Mono is installed:
-
-```bash
-eza --tree --icons=always --git-ignore --colour=always src/ | rich-card --title tree -o tree.svg
-```
-
-Images can be framed in the same card style:
-
-```bash
-rich-card --image screenshot.png --title \"Build result\" --inner-padding 24 -o screenshot-card.svg
-```
-
-Cards auto-size to their content by default. Pass `--width` when you want a
-fixed canvas width. Use `--background-padding` for the outer gradient margin
-and `--inner-padding` for the padding inside the terminal card:
-
-```bash
-rich-card --content 'print(\"hi\")' --width 1080 --background-padding 80 --inner-padding 32 -o fixed-card.svg
-```
-
-## Generated Assets
-
-`card.svg` and this README are generated together:
-
-```bash
-uv run python scripts/update_generated_docs.py
-```
-
-The Nix development shell installs a pre-commit hook that runs the same command
-before each commit, so the preview and CLI reference stay in sync with the code.
-
-## CLI Reference
-
-{cli_docs}
-
-"""
+    prefix = readme[: begin_index + len(BEGIN_CLI_REFERENCE)].rstrip()
+    suffix = readme[end_index:].lstrip()
+    README.write_text(f"{prefix}\n\n{cli_docs}\n\n{suffix}", encoding="utf-8")
 
 
 if __name__ == "__main__":

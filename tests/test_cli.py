@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import os
 import re
 import tempfile
 import unittest
@@ -7,6 +9,7 @@ from pathlib import Path
 
 from typer.testing import CliRunner
 
+from rich_card.config import default_config_path
 from rich_card.cli import BackgroundPreset, app
 from rich_card.svg import (
     BACKGROUND_PRESETS,
@@ -42,6 +45,10 @@ class RichCardsCliTest(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.output = Path(self.tmp.name) / "card.svg"
+        self.config_home = Path(self.tmp.name) / "xdg-config"
+        self.old_xdg_config_home = os.environ.get("XDG_CONFIG_HOME")
+        os.environ["XDG_CONFIG_HOME"] = str(self.config_home)
+        self.addCleanup(self.restore_xdg_config_home)
 
     def svg_width(self, path: Path) -> int:
         match = re.search(
@@ -49,6 +56,30 @@ class RichCardsCliTest(unittest.TestCase):
         )
         self.assertIsNotNone(match)
         return int(match.group(1))
+
+    def restore_xdg_config_home(self) -> None:
+        if self.old_xdg_config_home is None:
+            os.environ.pop("XDG_CONFIG_HOME", None)
+        else:
+            os.environ["XDG_CONFIG_HOME"] = self.old_xdg_config_home
+
+    def write_config(self, config: object) -> Path:
+        path = self.config_home / "rich-card" / "config.json"
+        path.parent.mkdir(parents=True)
+        path.write_text(json.dumps(config), encoding="utf-8")
+        return path
+
+    def test_blank_xdg_config_home_falls_back_to_home_config(self) -> None:
+        self.assertEqual(
+            default_config_path({"XDG_CONFIG_HOME": "  "}),
+            Path.home() / ".config" / "rich-card" / "config.json",
+        )
+
+    def test_relative_xdg_config_home_falls_back_to_home_config(self) -> None:
+        self.assertEqual(
+            default_config_path({"XDG_CONFIG_HOME": "relative/config"}),
+            Path.home() / ".config" / "rich-card" / "config.json",
+        )
 
     def test_content_writes_svg(self) -> None:
         result = self.runner.invoke(
@@ -114,6 +145,250 @@ class RichCardsCliTest(unittest.TestCase):
         svg = self.output.read_text(encoding="utf-8")
         self.assertIn(">  foo</tspan>", svg)
         self.assertNotIn(">    foo</tspan>", svg)
+
+    def test_xdg_config_supplies_cli_defaults(self) -> None:
+        configured_output = Path(self.tmp.name) / "configured.svg"
+        self.write_config(
+            {
+                "output": str(configured_output),
+                "card": {
+                    "background": "ember",
+                    "width": 640,
+                    "inner_padding": 16,
+                    "radius": 40,
+                    "line_numbers": True,
+                    "tab_size": 4,
+                    "title": "Configured",
+                },
+            }
+        )
+
+        result = self.runner.invoke(
+            app,
+            [
+                "--content",
+                "\tfoo",
+                "--lexer",
+                "text",
+            ],
+        )
+
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertEqual(result.stdout, f"{configured_output}\n")
+        svg = configured_output.read_text(encoding="utf-8")
+        self.assertIn('width="640"', svg)
+        self.assertIn('rx="40"', svg)
+        self.assertIn("#f6b05f", svg)
+        self.assertIn(">1 │ </tspan>", svg)
+        self.assertIn(">    foo</tspan>", svg)
+        self.assertIn(">Configured</tspan></text>", svg)
+        self.assertIn('<text x="88" y="153"', svg)
+
+    def test_cli_options_override_xdg_config_defaults(self) -> None:
+        configured_output = Path(self.tmp.name) / "configured.svg"
+        self.write_config(
+            {
+                "output": str(configured_output),
+                "card": {
+                    "background": "ember",
+                    "width": 640,
+                    "inner_padding_x": 60,
+                    "inner_padding_y": 60,
+                    "radius": 40,
+                    "line_numbers": True,
+                },
+            }
+        )
+
+        result = self.runner.invoke(
+            app,
+            [
+                "--content",
+                "print('hello')",
+                "--background",
+                "electric-twilight",
+                "--width",
+                "800",
+                "--inner-padding",
+                "20",
+                "--radius",
+                "12",
+                "--no-line-numbers",
+                "--output",
+                str(self.output),
+            ],
+        )
+
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertEqual(result.stdout, f"{self.output}\n")
+        self.assertFalse(configured_output.exists())
+        svg = self.output.read_text(encoding="utf-8")
+        self.assertIn('width="800"', svg)
+        self.assertIn('rx="12"', svg)
+        self.assertIn("#0b1026", svg)
+        self.assertIn('<text x="92" y="157"', svg)
+        self.assertNotIn(">1 │ ", svg)
+
+    def test_xdg_config_supplies_hidden_renderer_defaults(self) -> None:
+        self.write_config(
+            {
+                "card": {"line_numbers": True},
+                "renderer": {
+                    "card_fill": "#111111",
+                    "card_stroke": "#222222",
+                    "muted_text": "#abcdef",
+                    "code_font_stack": "Configured Mono, monospace",
+                    "font_size": 17,
+                    "min_card_width": 300,
+                },
+            }
+        )
+
+        result = self.runner.invoke(
+            app,
+            [
+                "--content",
+                "x",
+                "--lexer",
+                "text",
+                "--output",
+                str(self.output),
+            ],
+        )
+
+        self.assertEqual(result.exit_code, 0, result.output)
+        svg = self.output.read_text(encoding="utf-8")
+        self.assertIn('width="444"', svg)
+        self.assertIn('fill="#111111" stroke="#222222"', svg)
+        self.assertIn('font-family="Configured Mono, monospace"', svg)
+        self.assertIn('font-size="17"', svg)
+        self.assertIn('<tspan fill="#abcdef">1 │ </tspan>', svg)
+
+    def test_xdg_config_rejects_invalid_json(self) -> None:
+        path = self.config_home / "rich-card" / "config.json"
+        path.parent.mkdir(parents=True)
+        path.write_text("{", encoding="utf-8")
+
+        result = self.runner.invoke(
+            app,
+            [
+                "--content",
+                "x",
+                "--output",
+                str(self.output),
+            ],
+        )
+
+        self.assertNotEqual(result.exit_code, 0)
+        self.assertIn("invalid", result.output)
+        self.assertIn("JSON", result.output)
+        self.assertIn(str(path), result.output)
+
+    def test_xdg_config_rejects_invalid_utf8(self) -> None:
+        path = self.config_home / "rich-card" / "config.json"
+        path.parent.mkdir(parents=True)
+        path.write_bytes(b"\xff")
+
+        result = self.runner.invoke(
+            app,
+            [
+                "--content",
+                "x",
+                "--output",
+                str(self.output),
+            ],
+        )
+
+        self.assertNotEqual(result.exit_code, 0)
+        self.assertIn("could not", result.output)
+        self.assertIn("read config", result.output)
+        self.assertIn(str(path), result.output)
+
+    def test_xdg_config_rejects_unknown_keys(self) -> None:
+        self.write_config({"card": {"caption": "not supported"}})
+
+        result = self.runner.invoke(
+            app,
+            [
+                "--content",
+                "x",
+                "--output",
+                str(self.output),
+            ],
+        )
+
+        self.assertNotEqual(result.exit_code, 0)
+        self.assertIn("unknown", result.output)
+        self.assertIn("card key: caption", result.output)
+
+    def test_xdg_config_rejects_out_of_range_values(self) -> None:
+        self.write_config({"card": {"width": 10}})
+
+        result = self.runner.invoke(
+            app,
+            [
+                "--content",
+                "x",
+                "--output",
+                str(self.output),
+            ],
+        )
+
+        self.assertNotEqual(result.exit_code, 0)
+        self.assertIn("card.width", result.output)
+        self.assertIn("must be in range 520..2400", result.output)
+
+    def test_xdg_config_rejects_empty_card_strings(self) -> None:
+        self.write_config({"card": {"lexer": "", "title": ""}})
+
+        result = self.runner.invoke(
+            app,
+            [
+                "--content",
+                "x",
+                "--output",
+                str(self.output),
+            ],
+        )
+
+        self.assertNotEqual(result.exit_code, 0)
+        self.assertIn("card.lexer", result.output)
+        self.assertIn("must be a non-empty string", result.output)
+
+    def test_xdg_config_rejects_non_string_card_strings(self) -> None:
+        self.write_config({"card": {"lexer": 12}})
+
+        result = self.runner.invoke(
+            app,
+            [
+                "--content",
+                "x",
+                "--output",
+                str(self.output),
+            ],
+        )
+
+        self.assertNotEqual(result.exit_code, 0)
+        self.assertIn("card.lexer", result.output)
+        self.assertIn("must be a string", result.output)
+
+    def test_xdg_config_rejects_unknown_background(self) -> None:
+        self.write_config({"card": {"background": "purple-haze"}})
+
+        result = self.runner.invoke(
+            app,
+            [
+                "--content",
+                "x",
+                "--output",
+                str(self.output),
+            ],
+        )
+
+        self.assertNotEqual(result.exit_code, 0)
+        self.assertIn(
+            "Unknown background preset 'purple-haze' in config", result.output
+        )
 
     def test_auto_width_tracks_longest_code_line(self) -> None:
         short_output = Path(self.tmp.name) / "short.svg"
@@ -527,7 +802,7 @@ class RichCardsCliTest(unittest.TestCase):
         self.assertEqual(result.exit_code, 0, result.output)
         svg = self.output.read_text(encoding="utf-8")
         match = re.search(
-            r'<text [^>]*font-family="([^"]+)"[^>]*text-anchor="middle">(.*?)</text>',
+            r'<text [^>]*font-family="([^"]+)"[^>]*text-anchor="middle"[^>]*>(.*?)</text>',
             svg,
         )
         self.assertIsNotNone(match)
@@ -537,6 +812,172 @@ class RichCardsCliTest(unittest.TestCase):
         self.assertNotIn("Apple Color Emoji", font_family)
         self.assertNotIn("Noto Color Emoji", font_family)
         self.assertNotIn("Twemoji Mozilla", font_family)
+
+    def test_logo_renders_in_title_bar(self) -> None:
+        logo = Path(self.tmp.name) / "logo.png"
+        logo.write_bytes(PNG_IMAGE)
+
+        result = self.runner.invoke(
+            app,
+            [
+                "--content",
+                "print('hello')",
+                "--title",
+                "Demo",
+                "--logo",
+                str(logo),
+                "--width",
+                "640",
+                "--output",
+                str(self.output),
+            ],
+        )
+
+        self.assertEqual(result.exit_code, 0, result.output)
+        svg = self.output.read_text(encoding="utf-8")
+        self.assertIn("rich-card-logo-bar", svg)
+        self.assertIn('x="494.0"', svg)
+        self.assertIn('y="84.0"', svg)
+        self.assertIn('width="52.0"', svg)
+        self.assertIn('height="26.0"', svg)
+        self.assertIn('href="data:image/png;base64,', svg)
+        self.assertIn('clip-path="url(#title-clip)"', svg)
+        self.assertNotIn("rich-card-logo-watermark", svg)
+
+    def test_logo_renders_as_watermark(self) -> None:
+        logo = Path(self.tmp.name) / "logo.svg"
+        logo.write_bytes(SVG_IMAGE)
+
+        result = self.runner.invoke(
+            app,
+            [
+                "--content",
+                "print('hello')",
+                "--logo",
+                str(logo),
+                "--logo-placement",
+                "watermark",
+                "--width",
+                "640",
+                "--output",
+                str(self.output),
+            ],
+        )
+
+        self.assertEqual(result.exit_code, 0, result.output)
+        svg = self.output.read_text(encoding="utf-8")
+        self.assertIn("rich-card-logo-watermark", svg)
+        self.assertIn('opacity="0.14"', svg)
+        self.assertIn('href="data:image/svg+xml;base64,', svg)
+        self.assertNotIn("rich-card-logo-bar", svg)
+
+    def test_logo_renders_in_both_placements(self) -> None:
+        logo = Path(self.tmp.name) / "logo.png"
+        logo.write_bytes(PNG_IMAGE)
+
+        result = self.runner.invoke(
+            app,
+            [
+                "--content",
+                "print('hello')",
+                "--logo",
+                str(logo),
+                "--logo-placement",
+                "both",
+                "--width",
+                "640",
+                "--output",
+                str(self.output),
+            ],
+        )
+
+        self.assertEqual(result.exit_code, 0, result.output)
+        svg = self.output.read_text(encoding="utf-8")
+        self.assertIn("rich-card-logo-bar", svg)
+        self.assertIn("rich-card-logo-watermark", svg)
+
+    def test_xdg_config_supplies_logo_defaults_and_renderer_tuning(self) -> None:
+        logo = Path(self.tmp.name) / "logo.png"
+        logo.write_bytes(PNG_IMAGE)
+        self.write_config(
+            {
+                "card": {
+                    "logo": str(logo),
+                    "logo_placement": "watermark",
+                },
+                "renderer": {
+                    "logo_watermark_opacity": 0.5,
+                    "logo_watermark_width_ratio": 0.75,
+                },
+            }
+        )
+
+        result = self.runner.invoke(
+            app,
+            [
+                "--content",
+                "print('hello')",
+                "--width",
+                "640",
+                "--output",
+                str(self.output),
+            ],
+        )
+
+        self.assertEqual(result.exit_code, 0, result.output)
+        svg = self.output.read_text(encoding="utf-8")
+        self.assertIn("rich-card-logo-watermark", svg)
+        self.assertIn('opacity="0.5"', svg)
+        self.assertIn('width="116.6"', svg)
+        self.assertNotIn("rich-card-logo-bar", svg)
+
+    def test_cli_logo_placement_overrides_xdg_config_default(self) -> None:
+        logo = Path(self.tmp.name) / "logo.png"
+        logo.write_bytes(PNG_IMAGE)
+        self.write_config(
+            {
+                "card": {
+                    "logo": str(logo),
+                    "logo_placement": "watermark",
+                },
+            }
+        )
+
+        result = self.runner.invoke(
+            app,
+            [
+                "--content",
+                "print('hello')",
+                "--logo-placement",
+                "bar",
+                "--width",
+                "640",
+                "--output",
+                str(self.output),
+            ],
+        )
+
+        self.assertEqual(result.exit_code, 0, result.output)
+        svg = self.output.read_text(encoding="utf-8")
+        self.assertIn("rich-card-logo-bar", svg)
+        self.assertNotIn("rich-card-logo-watermark", svg)
+
+    def test_xdg_config_rejects_unknown_logo_placement(self) -> None:
+        self.write_config({"card": {"logo_placement": "corner"}})
+
+        result = self.runner.invoke(
+            app,
+            [
+                "--content",
+                "print('hello')",
+                "--output",
+                str(self.output),
+            ],
+        )
+
+        self.assertNotEqual(result.exit_code, 0)
+        self.assertIn("card.logo_placement", result.output)
+        self.assertIn("must be one of", result.output)
 
     def test_image_jpeg_writes_image_card(self) -> None:
         image = Path(self.tmp.name) / "sample.jpg"
@@ -556,6 +997,33 @@ class RichCardsCliTest(unittest.TestCase):
         svg = self.output.read_text(encoding="utf-8")
         self.assertIn('href="data:image/jpeg;base64,', svg)
         self.assertIn(">sample.jpg</tspan></text>", svg)
+
+    def test_image_card_renders_logo(self) -> None:
+        image = Path(self.tmp.name) / "sample.png"
+        logo = Path(self.tmp.name) / "logo.svg"
+        image.write_bytes(PNG_IMAGE)
+        logo.write_bytes(SVG_IMAGE)
+
+        result = self.runner.invoke(
+            app,
+            [
+                "--image",
+                str(image),
+                "--logo",
+                str(logo),
+                "--logo-placement",
+                "both",
+                "--width",
+                "640",
+                "--output",
+                str(self.output),
+            ],
+        )
+
+        self.assertEqual(result.exit_code, 0, result.output)
+        svg = self.output.read_text(encoding="utf-8")
+        self.assertIn("rich-card-logo-bar", svg)
+        self.assertIn("rich-card-logo-watermark", svg)
 
     def test_image_svg_writes_image_card(self) -> None:
         image = Path(self.tmp.name) / "sample.svg"

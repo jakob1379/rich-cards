@@ -36,18 +36,61 @@ fixed canvas width. Use `--background-padding` for the outer gradient margin and
 rich-card --content 'print("hi")' --width 1080 --background-padding 80 --inner-padding 32 -o fixed-card.svg
 ```
 
+## Configuration
+
+Defaults can be set in `$XDG_CONFIG_HOME/rich-card/config.json`, falling back to
+`~/.config/rich-card/config.json`. Explicit CLI options always override
+configured defaults.
+
+```json
+{
+  "output": "card.svg",
+  "card": {
+    "theme": "monokai-extended",
+    "logo": "logo.svg",
+    "logo_placement": "both",
+    "background": "aurora",
+    "padding": 72,
+    "inner_padding": 30,
+    "radius": 12,
+    "line_numbers": false,
+    "word_wrap": false,
+    "tab_size": 2
+  },
+  "renderer": {
+    "card_fill": "#26282b",
+    "card_stroke": "#3b3e43",
+    "code_font_stack": "'JetBrains Mono', 'Cascadia Code', monospace",
+    "logo_bar_max_height": 26,
+    "logo_bar_max_width": 120,
+    "logo_bar_right_padding": 22,
+    "logo_watermark_width_ratio": 0.45,
+    "logo_watermark_opacity": 0.14
+  }
+}
+```
+
+The `card` section covers CLI defaults and `renderer` covers scalar SVG
+presentation defaults that are intentionally not exposed as CLI flags.
+
 ## Generated Assets
 
-`card.svg` and this README are generated together:
+`card.svg` can be regenerated with:
 
 ```bash
 uv run python scripts/update_generated_docs.py
 ```
 
-The Nix development shell installs a pre-commit hook that runs the same command
-before each commit, so the preview and CLI reference stay in sync with the code.
+The Nix development shell installs a pre-commit hook that refreshes `card.svg`
+and the CLI reference before each commit:
+
+```bash
+uv run python scripts/update_generated_docs.py
+```
 
 ## CLI Reference
+
+<!-- BEGIN CLI REFERENCE -->
 
 ### `rich-card`
 
@@ -72,6 +115,10 @@ $ rich-card [OPTIONS] [SOURCE]
 - `-s, --theme TEXT`: Pygments theme name. See `rich-card --list-themes`.
   [default: monokai-extended]
 - `-t, --title TEXT`: Optional card title shown in the card chrome.
+- `--logo FILE`: Logo image to place in the title bar, terminal background, or
+  both. Supports PNG, JPEG, and SVG.
+- `--logo-placement [both|watermark|bar]`: Where to render --logo. [default:
+  bar]
 - `-b, --background [aurora|blue-raspberry|cosmic-lumen|dusty-grass|ember|electric-twilight|frozen-dream|lagoon|megatron|moss|mono|night-fade|nordic|premium-dark|prism|rainy-ashville|sublime-light|sunny-morning|tempting-azure|warm-flame|winter-neva]`:
   Gradient preset. [default: aurora]
 - `-w, --width INTEGER RANGE`: Fixed SVG canvas width in pixels.
@@ -90,3 +137,5 @@ $ rich-card [OPTIONS] [SOURCE]
   1&lt;=x&lt;=12]
 - `--list-themes`: List syntax themes and exit.
 - `--help`: Show this message and exit.
+
+<!-- END CLI REFERENCE -->
