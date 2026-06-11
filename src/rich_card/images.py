@@ -1,0 +1,164 @@
+from __future__ import annotations
+
+import base64
+from dataclasses import dataclass
+import math
+import re
+import struct
+
+from defusedxml import ElementTree
+from defusedxml.common import DefusedXmlException
+
+from .errors import UnsupportedImageError
+
+
+@dataclass(frozen=True)
+class ImageContent:
+    data_uri: str
+    width: float
+    height: float
+
+    def __post_init__(self) -> None:
+        if not math.isfinite(self.width) or not math.isfinite(self.height):
+            raise UnsupportedImageError("Image dimensions must be finite.")
+        if self.width <= 0 or self.height <= 0:
+            raise UnsupportedImageError("Image dimensions must be positive.")
+
+
+JPEG_STANDALONE_MARKERS = frozenset({0x01, *range(0xD0, 0xD8)})
+JPEG_TERMINAL_MARKERS = frozenset({0xD9, 0xDA})
+JPEG_START_OF_FRAME_MARKERS = frozenset(
+    {
+        0xC0,
+        0xC1,
+        0xC2,
+        0xC3,
+        0xC5,
+        0xC6,
+        0xC7,
+        0xC9,
+        0xCA,
+        0xCB,
+        0xCD,
+        0xCE,
+        0xCF,
+    }
+)
+
+
+def load_image_content(image: bytes, file_name: str) -> ImageContent:
+    """Load image bytes into embeddable SVG content or raise UnsupportedImageError."""
+    mime_type, width, height = image_metadata(image, file_name)
+    encoded = base64.b64encode(image).decode("ascii")
+    return ImageContent(f"data:{mime_type};base64,{encoded}", width, height)
+
+
+def image_metadata(image: bytes, file_name: str) -> tuple[str, float, float]:
+    """Return image MIME type and dimensions or raise UnsupportedImageError."""
+    lowered = file_name.lower()
+    if lowered.endswith(".png"):
+        return "image/png", *_png_dimensions(image)
+    if lowered.endswith((".jpg", ".jpeg")):
+        return "image/jpeg", *_jpeg_dimensions(image)
+    if lowered.endswith(".svg"):
+        return "image/svg+xml", *_svg_dimensions(image)
+    raise UnsupportedImageError("Unsupported image format. Use PNG, JPEG, or SVG.")
+
+
+def _png_dimensions(image: bytes) -> tuple[float, float]:
+    if len(image) < 24 or image[:8] != b"\x89PNG\r\n\x1a\n" or image[12:16] != b"IHDR":
+        raise UnsupportedImageError("Invalid PNG image.")
+    width, height = struct.unpack(">II", image[16:24])
+    if width <= 0 or height <= 0:
+        raise UnsupportedImageError("PNG image dimensions must be positive.")
+    return float(width), float(height)
+
+
+def _jpeg_dimensions(image: bytes) -> tuple[float, float]:
+    if len(image) < 4 or image[:2] != b"\xff\xd8":
+        raise UnsupportedImageError("Invalid JPEG image.")
+
+    index = 2
+    while index < len(image):
+        marker, index = _next_jpeg_marker(image, index)
+        if marker is None or marker in JPEG_TERMINAL_MARKERS:
+            break
+        if marker in JPEG_STANDALONE_MARKERS:
+            continue
+
+        segment_length = _jpeg_segment_length(image, index)
+        if segment_length is None:
+            break
+        if marker in JPEG_START_OF_FRAME_MARKERS:
+            return _jpeg_segment_dimensions(image, index, segment_length)
+        index += segment_length
+    raise UnsupportedImageError("Could not determine JPEG image dimensions.")
+
+
+def _next_jpeg_marker(image: bytes, index: int) -> tuple[int | None, int]:
+    while index < len(image) and image[index] == 0xFF:
+        index += 1
+    if index >= len(image):
+        return None, index
+    return image[index], index + 1
+
+
+def _jpeg_segment_length(image: bytes, index: int) -> int | None:
+    if index + 2 > len(image):
+        return None
+    segment_length = struct.unpack(">H", image[index : index + 2])[0]
+    if segment_length < 2 or index + segment_length > len(image):
+        return None
+    return segment_length
+
+
+def _jpeg_segment_dimensions(
+    image: bytes, index: int, segment_length: int
+) -> tuple[float, float]:
+    if segment_length < 7:
+        raise UnsupportedImageError("Could not determine JPEG image dimensions.")
+    height, width = struct.unpack(">HH", image[index + 3 : index + 7])
+    if width <= 0 or height <= 0:
+        raise UnsupportedImageError("JPEG image dimensions must be positive.")
+    return float(width), float(height)
+
+
+def _svg_dimensions(image: bytes) -> tuple[float, float]:
+    try:
+        root = ElementTree.fromstring(image)
+    except (ElementTree.ParseError, DefusedXmlException) as exc:
+        raise UnsupportedImageError("Invalid SVG image.") from exc
+
+    width = _svg_length(root.get("width", ""))
+    height = _svg_length(root.get("height", ""))
+    if width is not None and height is not None:
+        return width, height
+
+    view_box = root.get("viewBox")
+    if view_box:
+        try:
+            values = [
+                float(value) for value in re.split(r"[\s,]+", view_box.strip()) if value
+            ]
+        except ValueError as exc:
+            raise UnsupportedImageError(
+                "Could not determine SVG image dimensions. Add width/height or viewBox."
+            ) from exc
+        if len(values) == 4:
+            width, height = values[2], values[3]
+            if not math.isfinite(width) or not math.isfinite(height):
+                raise UnsupportedImageError("SVG image dimensions must be finite.")
+            if width > 0 and height > 0:
+                return width, height
+
+    raise UnsupportedImageError(
+        "Could not determine SVG image dimensions. Add width/height or viewBox."
+    )
+
+
+def _svg_length(value: str) -> float | None:
+    match = re.fullmatch(r"\s*([0-9]+(?:\.[0-9]+)?)(?:px)?\s*", value)
+    if not match:
+        return None
+    length = float(match.group(1))
+    return length if length > 0 else None
